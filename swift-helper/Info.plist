@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>io.bambooworks.voiceflow.speechhelper</string>
+  <key>CFBundleName</key>
+  <string>SpeechHelper</string>
+  <key>CFBundleExecutable</key>
+  <string>SpeechHelper</string>
+  <key>CFBundleVersion</key>
+  <string>1.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>VoiceFlow needs microphone access to record your voice for transcription.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>VoiceFlow uses speech recognition to transcribe your voice into text.</string>
+</dict>
+</plist>
