@@ -15,15 +15,15 @@ let lastTranscript = ''
 let capturingKeycode = false
 
 // --- App setup ---
-app.dock?.hide() // No dock icon — menu bar utility
-
 app.whenReady().then(() => {
+  app.dock?.hide() // No dock icon — menu bar utility
   createTray()
   createMainWindow()
   createOverlayWindow()
   setupIpcHandlers()
   initBridge()
   startHotkeyFromSettings()
+  requestPermissions()
 })
 
 app.on('before-quit', () => {
@@ -204,6 +204,15 @@ function setupIpcHandlers () {
     // Returns list from renderer-side navigator.mediaDevices — handled in renderer
     return []
   })
+}
+
+async function requestPermissions () {
+  // Trigger macOS microphone permission dialog — this registers the app
+  // in System Settings > Privacy & Security > Microphone
+  const micStatus = systemPreferences.getMediaAccessStatus('microphone')
+  if (micStatus !== 'granted') {
+    await systemPreferences.askForMediaAccess('microphone')
+  }
 }
 
 function checkAccessibility () {
