@@ -210,6 +210,38 @@ function setupIpcHandlers () {
   // UI-triggered recording (click button instead of hotkey)
   ipcMain.handle('recording:start', () => handleRecordingStart())
   ipcMain.handle('recording:stop', () => handleRecordingStop())
+
+  // App info for Status screen
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    platform: process.platform === 'darwin' ? 'macOS' : process.platform,
+    electronVersion: process.versions.electron,
+    nodeVersion: process.versions.node,
+    userAgent: `Electron/${process.versions.electron} (${process.platform})`
+  }))
+
+  // Login item (launch at login)
+  ipcMain.handle('app:getLoginItem', () => {
+    return app.getLoginItemSettings().openAtLogin
+  })
+  ipcMain.handle('app:setLoginItem', (_, enabled) => {
+    app.setLoginItemSettings({ openAtLogin: enabled })
+  })
+
+  // System toggles — persisted in SQLite settings
+  ipcMain.handle('system:getAll', () => ({
+    launchAtLogin:   app.getLoginItemSettings().openAtLogin,
+    interactionSounds:   db.getSetting('interaction_sounds') !== 'false',
+    copyToClipboard:     db.getSetting('copy_to_clipboard') === 'true',
+    muteBackground:      db.getSetting('mute_background') !== 'false'
+  }))
+  ipcMain.handle('system:set', (_, key, value) => {
+    if (key === 'launchAtLogin') {
+      app.setLoginItemSettings({ openAtLogin: value })
+    } else {
+      db.setSetting(key, String(value))
+    }
+  })
 }
 
 async function requestPermissions () {

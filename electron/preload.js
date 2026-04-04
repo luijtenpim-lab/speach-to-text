@@ -30,5 +30,10 @@ contextBridge.exposeInMainWorld('voiceflow', {
   stopKeycodeCapture: () => ipcRenderer.invoke('hotkey:stopCapture'),
 
   // --- Microphone list ---
-  getMicrophones: () => ipcRenderer.invoke('mic:list')
+  getMicrophones: () => ipcRenderer.invoke('mic:list'),
+
+  // --- App info + system settings ---
+  getAppInfo:     () => ipcRenderer.invoke('app:info'),
+  getSystemAll:   () => ipcRenderer.invoke('system:getAll'),
+  setSystem:      (key, value) => ipcRenderer.invoke('system:set', key, value)
 })
