@@ -3,11 +3,13 @@ import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import History from './pages/History'
 import Settings from './pages/Settings'
+import Agent from './pages/Agent'
 import Onboarding from './pages/Onboarding'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: '▦' },
   { to: '/history',   label: 'History',   icon: '◷' },
+  { to: '/agent',     label: 'Agent',     icon: '✦' },
   { to: '/settings',  label: 'Settings',  icon: '⚙' }
 ]
 
@@ -47,6 +49,7 @@ export default function App () {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/history" element={<History />} />
+              <Route path="/agent" element={<Agent />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </main>
