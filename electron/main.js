@@ -128,11 +128,13 @@ function startHotkeyFromSettings () {
   const storedKeycode = db.getSetting('hotkey_rawcode')
   const keycode = storedKeycode ? parseInt(storedKeycode, 10) : FN_KEYCODE
 
+  console.log('[VoiceFlow] Starting hotkey listener for keycode:', keycode)
   startHotkeyListener(keycode, handleRecordingStart, handleRecordingStop)
 }
 
 function handleRecordingStart () {
   if (isRecording || capturingKeycode) return
+  console.log('[VoiceFlow] Recording START')
   isRecording = true
   lastTranscript = ''
   overlayWindow?.showInactive()
@@ -143,6 +145,7 @@ function handleRecordingStart () {
 
 function handleRecordingStop () {
   if (!isRecording) return
+  console.log('[VoiceFlow] Recording STOP, transcript:', lastTranscript)
   isRecording = false
   const duration = stopRecording() || 0
 
@@ -201,9 +204,12 @@ function setupIpcHandlers () {
   })
 
   ipcMain.handle('mic:list', async () => {
-    // Returns list from renderer-side navigator.mediaDevices — handled in renderer
     return []
   })
+
+  // UI-triggered recording (click button instead of hotkey)
+  ipcMain.handle('recording:start', () => handleRecordingStart())
+  ipcMain.handle('recording:stop', () => handleRecordingStop())
 }
 
 async function requestPermissions () {

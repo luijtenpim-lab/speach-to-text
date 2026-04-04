@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld('voiceflow', {
   getSetting: (key) => ipcRenderer.invoke('db:getSetting', key),
   setSetting: (key, value) => ipcRenderer.invoke('db:setSetting', key, value),
 
+  // --- Recording controls (renderer → main) ---
+  startRecording: () => ipcRenderer.invoke('recording:start'),
+  stopRecording: () => ipcRenderer.invoke('recording:stop'),
+
   // --- Recording events (main → renderer) ---
   onRecordingStart: (cb) => ipcRenderer.on('recording:start', cb),
   onRecordingStop: (cb) => ipcRenderer.on('recording:stop', cb),
