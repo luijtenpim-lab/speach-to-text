@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react'
+import LanguageModal from '../components/LanguageModal'
+import MicrophoneModal from '../components/MicrophoneModal'
 
 const SECTIONS = [
   { id: 'defaults', label: 'Defaults' },
@@ -37,13 +39,26 @@ export default function Settings () {
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
 function DefaultsSection () {
-  const [hotkeyCode, setHotkeyCode] = useState(null)
-  const [capturing, setCapturing] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [hotkeyCode, setHotkeyCode]   = useState(null)
+  const [capturing, setCapturing]     = useState(false)
+  const [saved, setSaved]             = useState(false)
+  const [showLang, setShowLang]       = useState(false)
+  const [showMic, setShowMic]         = useState(false)
+  const [micLabel, setMicLabel]       = useState('Auto-detect')
+  const [langLabel, setLangLabel]     = useState('Auto-detect')
 
   useEffect(() => {
-    window.voiceflow.getSetting('hotkey_rawcode').then((val) => {
-      setHotkeyCode(val ? parseInt(val, 10) : 63)
+    window.voiceflow.getSetting('hotkey_rawcode').then(v => setHotkeyCode(v ? parseInt(v, 10) : 63))
+    window.voiceflow.getSetting('microphone_label').then(v => { if (v) setMicLabel(v) })
+    window.voiceflow.getSetting('language_auto').then(v => {
+      if (v === 'false') {
+        window.voiceflow.getSetting('languages').then(v2 => {
+          if (v2) {
+            const codes = JSON.parse(v2)
+            setLangLabel(codes.length === 1 ? codes[0] : `${codes.length} languages`)
+          }
+        })
+      }
     })
     window.voiceflow.onKeycodeDetected((code) => {
       setHotkeyCode(code)
@@ -67,43 +82,49 @@ function DefaultsSection () {
   }
 
   return (
-    <div>
-      <h2 style={styles.pageTitle}>Defaults</h2>
-      <p style={styles.pageSubtitle}>Configure default settings and permissions</p>
+    <>
+      {showLang && <LanguageModal onClose={() => { setShowLang(false); window.voiceflow.getSetting('language_auto').then(v => setLangLabel(v === 'false' ? 'Custom' : 'Auto-detect')) }} />}
+      {showMic  && <MicrophoneModal onClose={() => { setShowMic(false); window.voiceflow.getSetting('microphone_label').then(v => setMicLabel(v || 'Auto-detect')) }} />}
 
-      <SettingRow
-        title="Set default keyboard shortcut"
-        desc="Choose your preferred key to hold for recording."
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={styles.keyBadge}>
-            {capturing ? 'Press any key…' : hotkeyLabel(hotkeyCode)}
+      <div>
+        <h2 style={styles.pageTitle}>Defaults</h2>
+        <p style={styles.pageSubtitle}>Configure default settings and permissions</p>
+
+        <SettingRow
+          title="Set default keyboard shortcut"
+          desc="Choose your preferred key to hold for recording."
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={styles.keyBadge}>
+              {capturing ? 'Press any key…' : hotkeyLabel(hotkeyCode)}
+            </div>
+            <ActionButton onClick={capturing ? undefined : startCapture} disabled={capturing}>
+              {capturing ? 'Waiting…' : 'Change shortcut'}
+            </ActionButton>
+            {saved && <span style={{ color: '#4ade80', fontSize: 13 }}>Saved ✓</span>}
           </div>
-          <ActionButton onClick={capturing ? undefined : startCapture} disabled={capturing}>
-            {capturing ? 'Waiting…' : 'Change shortcut'}
-          </ActionButton>
-          {saved && <span style={{ color: '#4ade80', fontSize: 13 }}>Saved ✓</span>}
-        </div>
-        <p style={styles.hint}>
-          Default: <strong>fn</strong>. If fn doesn't respond, try Right Option (⌥) or another key.
-        </p>
-      </SettingRow>
+          <p style={styles.hint}>
+            Default: <strong>fn</strong>. If fn doesn't respond, try Right Option (⌥) or another key.
+          </p>
+        </SettingRow>
 
-      <SettingRow
-        title="Set default microphone"
-        desc="Choose your preferred microphone to capture your voice."
-        badge="Current: Auto-detect"
-      >
-        <ActionButton disabled>Select microphone</ActionButton>
-      </SettingRow>
+        <SettingRow
+          title="Set default microphone"
+          desc="Choose your preferred microphone to capture your voice."
+          badge={`Current: ${micLabel}`}
+        >
+          <ActionButton onClick={() => setShowMic(true)}>Select microphone</ActionButton>
+        </SettingRow>
 
-      <SettingRow
-        title="Set default language"
-        desc="Choose your preferred language for voice recognition."
-      >
-        <ActionButton disabled>Select language</ActionButton>
-      </SettingRow>
-    </div>
+        <SettingRow
+          title="Set default language"
+          desc="Choose your preferred language for voice recognition."
+          badge={`Current: ${langLabel}`}
+        >
+          <ActionButton onClick={() => setShowLang(true)}>Select language</ActionButton>
+        </SettingRow>
+      </div>
+    </>
   )
 }
 
