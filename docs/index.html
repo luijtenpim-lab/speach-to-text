@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voxa — Voice-to-text for Mac</title>
+  <meta name="description" content="Dictate into any app on your Mac. Hold a key, speak, and your words appear instantly — anywhere." />
+
+  <style>
+    /* ── Reset ──────────────────────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, 'Inter', BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #080808;
+      color: #FFFFFF;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { text-decoration: none; color: inherit; }
+    img { display: block; max-width: 100%; }
+
+    /* ── Design tokens ──────────────────────────────────────────────────── */
+    :root {
+      --bg:        #080808;
+      --surface:   #141414;
+      --surface2:  #1C1C1C;
+      --border:    rgba(255,255,255,0.07);
+      --accent1:   #9333EA;
+      --accent2:   #D946EF;
+      --grad:      linear-gradient(135deg, #9333EA, #D946EF);
+      --text1:     #FFFFFF;
+      --text2:     #C8C8C8;
+      --text3:     #888888;
+    }
+
+    /* ── Utilities ──────────────────────────────────────────────────────── */
+    .grad-text {
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 28px; }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--grad);
+      color: #fff;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 15px 32px;
+      border-radius: 50px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 0 32px rgba(217,70,239,0.45);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 48px rgba(217,70,239,0.6);
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.06);
+      color: #C8C8C8;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 13px 28px;
+      border-radius: 50px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+
+    /* ── Nav ────────────────────────────────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(8,8,8,0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 62px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: -0.03em;
+    }
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: var(--grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 14px rgba(217,70,239,0.5);
+      flex-shrink: 0;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+    .nav-links a {
+      font-size: 14px;
+      color: var(--text3);
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+    .nav-links a:hover { color: #fff; }
+    .nav-cta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav-download {
+      background: var(--grad);
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 9px 20px;
+      border-radius: 50px;
+      box-shadow: 0 0 18px rgba(217,70,239,0.4);
+      transition: box-shadow 0.15s;
+    }
+    .nav-download:hover { box-shadow: 0 0 28px rgba(217,70,239,0.6); }
+
+    /* ── Hero ───────────────────────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      text-align: center;
+      padding: 120px 0 80px;
+      overflow: hidden;
+    }
+    /* Background glow blooms */
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(147,51,234,0.18) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      top: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 500px;
+      height: 400px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(217,70,239,0.12) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(217,70,239,0.1);
+      border: 1px solid rgba(217,70,239,0.3);
+      border-radius: 50px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #F0ABFC;
+      margin-bottom: 28px;
+    }
+    .hero-eyebrow-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #D946EF;
+      box-shadow: 0 0 6px #D946EF;
+      flex-shrink: 0;
+    }
+    .hero h1 {
+      font-size: clamp(44px, 7vw, 80px);
+      font-weight: 800;
+      line-height: 1.06;
+      letter-spacing: -0.04em;
+      margin-bottom: 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .hero p {
+      font-size: clamp(16px, 2vw, 20px);
+      color: var(--text2);
+      max-width: 540px;
+      margin: 0 auto 40px;
+      line-height: 1.65;
+      position: relative;
+      z-index: 1;
+    }
+    .hero-btns {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      position: relative;
+      z-index: 1;
+    }
+    .hero-meta {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--text3);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── App preview ────────────────────────────────────────────────────── */
+    .preview {
+      position: relative;
+      margin: 60px auto 0;
+      max-width: 860px;
+      z-index: 1;
+    }
+    .preview-window {
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.7), 0 0 0 1px rgba(217,70,239,0.12);
+    }
+    .preview-titlebar {
+      background: #0D0D0D;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .preview-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .preview-titlebar-name {
+      flex: 1;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text3);
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    .preview-body {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 380px;
+    }
+    .preview-sidebar {
+      background: #0D0D0D;
+      border-right: 1px solid var(--border);
+      padding: 20px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .preview-logo-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 8px 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 10px;
+    }
+    .preview-logo-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: var(--grad);
+      box-shadow: 0 0 10px rgba(217,70,239,0.5);
+      flex-shrink: 0;
+    }
+    .preview-logo-text {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .preview-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #888888;
+    }
+    .preview-nav-item.active {
+      background: linear-gradient(90deg, rgba(217,70,239,0.2) 0%, transparent 100%);
+      color: #FFFFFF;
+      border-left: 3px solid #D946EF;
+      margin-left: -3px;
+      font-weight: 600;
+    }
+    .preview-nav-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      background: currentColor;
+      opacity: 0.5;
+      flex-shrink: 0;
+    }
+    .preview-content {
+      padding: 28px;
+      background: #080808;
+    }
+    .preview-heading { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .preview-sub { font-size: 12px; color: var(--text3); margin-bottom: 22px; }
+    .preview-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .preview-stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .preview-stat-bar {
+      position: absolute;
+      left: 0;
+      top: 20%;
+      bottom: 20%;
+      width: 3px;
+      border-radius: 2px;
+      background: var(--grad);
+    }
+    .preview-stat-label { font-size: 10px; font-weight: 700; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; }
+    .preview-stat-value { font-size: 22px; font-weight: 700; color: #fff; }
+    .preview-stat-unit { font-size: 11px; color: var(--text3); font-weight: 400; }
+    .preview-chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .preview-chart-title { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+    .preview-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 60px;
+    }
+    .preview-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .preview-bar {
+      width: 100%;
+      border-radius: 4px 4px 0 0;
+      background: linear-gradient(180deg, #D946EF, #9333EA);
+      opacity: 0.7;
+    }
+    .preview-bar-label { font-size: 9px; color: var(--text3); }
+
+    /* ── Social proof ───────────────────────────────────────────────────── */
+    .social-proof {
+      text-align: center;
+      padding: 48px 0 0;
+    }
+    .social-proof p { font-size: 13px; color: var(--text3); margin-bottom: 16px; }
+    .badges {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text2);
+    }
+    .badge-icon { font-size: 15px; }
+
+    /* ── Section shared ─────────────────────────────────────────────────── */
+    section { padding: 100px 0; }
+    .section-eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: clamp(30px, 4vw, 46px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 16px;
+    }
+    .section-subtitle {
+      font-size: 17px;
+      color: var(--text2);
+      line-height: 1.65;
+      max-width: 520px;
+    }
+
+    /* ── Features ───────────────────────────────────────────────────────── */
+    .features { border-top: 1px solid var(--border); }
+    .features-header { text-align: center; margin-bottom: 64px; }
+    .features-header .section-subtitle { margin: 0 auto; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .feature-card:hover {
+      border-color: rgba(217,70,239,0.3);
+      transform: translateY(-3px);
+    }
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 13px;
+      background: rgba(217,70,239,0.12);
+      border: 1px solid rgba(217,70,239,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+      font-size: 22px;
+    }
+    .feature-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+    .feature-desc { font-size: 14px; color: var(--text2); line-height: 1.65; }
+
+    /* ── How it works ───────────────────────────────────────────────────── */
+    .how { border-top: 1px solid var(--border); }
+    .how-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 80px;
+      align-items: center;
+    }
+    .steps { display: flex; flex-direction: column; gap: 0; }
+    .step { display: flex; gap: 20px; position: relative; padding-bottom: 36px; }
+    .step:last-child { padding-bottom: 0; }
+    .step-line {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      flex-shrink: 0;
+    }
+    .step-num {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 0 16px rgba(217,70,239,0.4);
+    }
+    .step-connector {
+      width: 1px;
+      flex: 1;
+      min-height: 24px;
+      background: linear-gradient(to bottom, rgba(217,70,239,0.4), transparent);
+      margin-top: 6px;
+    }
+    .step:last-child .step-connector { display: none; }
+    .step-body { padding-top: 6px; }
+    .step-title { font-size: 17px; font-weight: 700; margin-bottom: 7px; }
+    .step-desc { font-size: 14px; color: var(--text2); line-height: 1.65; }
+    .how-visual {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+    }
+    .how-visual-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #0D0D0D;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .how-visual-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      background: rgba(217,70,239,0.12);
+      flex-shrink: 0;
+    }
+    .how-visual-label { font-size: 13px; font-weight: 600; color: #C8C8C8; margin-bottom: 2px; }
+    .how-visual-sub { font-size: 11px; color: var(--text3); }
+    .how-visual-active {
+      border-color: rgba(217,70,239,0.4);
+      background: rgba(217,70,239,0.07);
+    }
+    .how-visual-active .how-visual-label { color: #F0ABFC; }
+    .recording-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(217,70,239,0.12);
+      border: 1px solid rgba(217,70,239,0.35);
+      border-radius: 50px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #F0ABFC;
+    }
+    .recording-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #D946EF;
+      box-shadow: 0 0 8px #D946EF;
+    }
+    .transcript-preview {
+      background: #0D0D0D;
+      border: 1px solid rgba(217,70,239,0.25);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 14px;
+      color: #C8C8C8;
+      line-height: 1.6;
+      font-style: italic;
+    }
+    .cursor-blink {
+      display: inline-block;
+      width: 2px;
+      height: 15px;
+      background: #D946EF;
+      vertical-align: middle;
+      margin-left: 2px;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ── Pricing ────────────────────────────────────────────────────────── */
+    .pricing { border-top: 1px solid var(--border); }
+    .pricing-header { text-align: center; margin-bottom: 56px; }
+    .pricing-header .section-subtitle { margin: 0 auto; }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .pricing-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+    }
+    .pricing-card.featured {
+      border-color: rgba(217,70,239,0.4);
+      background: linear-gradient(145deg, rgba(147,51,234,0.1), rgba(217,70,239,0.06));
+      box-shadow: 0 0 40px rgba(217,70,239,0.15);
+    }
+    .plan-badge {
+      display: inline-block;
+      background: var(--grad);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 50px;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+    .plan-name { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .plan-price {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 4px;
+    }
+    .plan-price span { font-size: 16px; font-weight: 400; color: var(--text3); }
+    .plan-desc { font-size: 13px; color: var(--text3); margin-bottom: 24px; }
+    .plan-features { list-style: none; display: flex; flex-direction: column; gap: 11px; margin-bottom: 28px; }
+    .plan-features li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--text2);
+    }
+    .check {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(217,70,239,0.15);
+      border: 1px solid rgba(217,70,239,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: #D946EF;
+      flex-shrink: 0;
+    }
+    .plan-cta {
+      display: block;
+      text-align: center;
+      padding: 13px;
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .plan-cta.outline {
+      border: 1px solid var(--border);
+      color: var(--text2);
+    }
+    .plan-cta.outline:hover { background: rgba(255,255,255,0.05); }
+    .plan-cta.filled {
+      background: var(--grad);
+      color: #fff;
+      box-shadow: 0 0 20px rgba(217,70,239,0.4);
+    }
+    .plan-cta.filled:hover { box-shadow: 0 0 32px rgba(217,70,239,0.6); }
+
+    /* ── Download CTA ───────────────────────────────────────────────────── */
+    .download-cta {
+      border-top: 1px solid var(--border);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .download-cta::before {
+      content: '';
+      position: absolute;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 700px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(217,70,239,0.14) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .download-cta h2 {
+      font-size: clamp(32px, 5vw, 56px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 18px;
+      position: relative;
+    }
+    .download-cta p {
+      font-size: 18px;
+      color: var(--text2);
+      margin-bottom: 40px;
+      position: relative;
+    }
+    .download-cta .hero-btns { position: relative; }
+    .system-req {
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--text3);
+      position: relative;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 0;
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .footer-logo { display: flex; align-items: center; gap: 9px; }
+    .footer-logo-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      background: var(--grad);
+      flex-shrink: 0;
+    }
+    .footer-logo-text { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; }
+    .footer-right { display: flex; align-items: center; gap: 24px; }
+    .footer-link { font-size: 13px; color: var(--text3); transition: color 0.15s; }
+    .footer-link:hover { color: #fff; }
+    .footer-copy { font-size: 13px; color: var(--text3); }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .features-grid { grid-template-columns: 1fr 1fr; }
+      .how-inner { grid-template-columns: 1fr; gap: 48px; }
+      .pricing-grid { grid-template-columns: 1fr; max-width: 420px; }
+    }
+    @media (max-width: 640px) {
+      .features-grid { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+      .preview-body { grid-template-columns: 1fr; }
+      .preview-sidebar { display: none; }
+      .preview-stats { grid-template-columns: 1fr 1fr; }
+      .footer-inner { flex-direction: column; gap: 16px; text-align: center; }
+      .footer-right { flex-wrap: wrap; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Nav ──────────────────────────────────────────────────────────────── -->
+  <nav>
+    <div class="container nav-inner">
+      <a href="#" class="logo">
+        <div class="logo-mark">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="5" y="1" width="6" height="9" rx="3" stroke="white" stroke-width="1.5" fill="none"/>
+            <path d="M2.5 8C2.5 11.038 5 13.5 8 13.5s5.5-2.462 5.5-5.5" stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <line x1="8" y1="13.5" x2="8" y2="15" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="grad-text">Voxa</span>
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+      </ul>
+
+      <div class="nav-cta">
+        <a href="https://github.com/luijtenpim-lab/speach-to-text/releases/latest/download/Voxa-1.0.0-arm64.dmg"
+           class="nav-download">
+          Download free
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+  <div class="hero">
+    <div class="container">
+      <div class="hero-eyebrow">
+        <span class="hero-eyebrow-dot"></span>
+        Now available for macOS
+      </div>
+
+      <h1>
+        Your voice,<br>
+        <span class="grad-text">everywhere you type.</span>
+      </h1>
+
+      <p>
+        Hold a key, speak naturally, and your words appear instantly in any app —
+        Slack, Notion, email, code editors. No copy-paste. No switching windows.
+      </p>
+
+      <div class="hero-btns">
+        <a href="https://github.com/luijtenpim-lab/speach-to-text/releases/latest/download/Voxa-1.0.0-arm64.dmg"
+           class="btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <path d="M12 3v13M6 11l6 6 6-6"/>
+            <path d="M3 20h18"/>
+          </svg>
+          Download for Mac — Free
+        </a>
+        <a href="#how" class="btn-secondary">See how it works →</a>
+      </div>
+
+      <p class="hero-meta">macOS 12+ · Apple Silicon &amp; Intel · No account required</p>
+
+      <!-- App preview window -->
+      <div class="preview">
+        <div class="preview-window">
+          <div class="preview-titlebar">
+            <div class="preview-dot" style="background:#FF5F57"></div>
+            <div class="preview-dot" style="background:#FFBD2E"></div>
+            <div class="preview-dot" style="background:#28CA42"></div>
+            <div class="preview-titlebar-name">Voxa</div>
+          </div>
+          <div class="preview-body">
+            <div class="preview-sidebar">
+              <div class="preview-logo-row">
+                <div class="preview-logo-mark"></div>
+                <span class="preview-logo-text">Voxa</span>
+              </div>
+              <div class="preview-nav-item active">
+                <div class="preview-nav-dot" style="background: linear-gradient(135deg,#9333EA,#D946EF); opacity:1; border-radius:3px;"></div>
+                Dashboard
+              </div>
+              <div class="preview-nav-item">
+                <div class="preview-nav-dot"></div>
+                History
+              </div>
+              <div class="preview-nav-item">
+                <div class="preview-nav-dot"></div>
+                Agent
+              </div>
+              <div class="preview-nav-item">
+                <div class="preview-nav-dot"></div>
+                Settings
+              </div>
+            </div>
+            <div class="preview-content">
+              <div class="preview-heading">Dashboard</div>
+              <div class="preview-sub">Your voice productivity at a glance</div>
+              <div class="preview-stats">
+                <div class="preview-stat">
+                  <div class="preview-stat-bar"></div>
+                  <div class="preview-stat-label">TOTAL WORDS</div>
+                  <div class="preview-stat-value">12,482 <span class="preview-stat-unit">words</span></div>
+                </div>
+                <div class="preview-stat">
+                  <div class="preview-stat-bar"></div>
+                  <div class="preview-stat-label">TIME SAVED</div>
+                  <div class="preview-stat-value">5.2 <span class="preview-stat-unit">hrs</span></div>
+                </div>
+                <div class="preview-stat">
+                  <div class="preview-stat-bar"></div>
+                  <div class="preview-stat-label">DICTATED INTO</div>
+                  <div class="preview-stat-value">8 <span class="preview-stat-unit">apps</span></div>
+                </div>
+              </div>
+              <div class="preview-chart-card">
+                <div class="preview-chart-title">Usage — Last 7 Days</div>
+                <div class="preview-chart">
+                  <div class="preview-bar-wrap"><div class="preview-bar" style="height:35%"></div><div class="preview-bar-label">Mon</div></div>
+                  <div class="preview-bar-wrap"><div class="preview-bar" style="height:55%"></div><div class="preview-bar-label">Tue</div></div>
+                  <div class="preview-bar-wrap"><div class="preview-bar" style="height:42%"></div><div class="preview-bar-label">Wed</div></div>
+                  <div class="preview-bar-wrap"><div class="preview-bar" style="height:80%"></div><div class="preview-bar-label">Thu</div></div>
+                  <div class="preview-bar-wrap"><div class="preview-bar" style="height:65%"></div><div class="preview-bar-label">Fri</div></div>
+                  <div class="preview-bar-wrap"><div class="preview-bar" style="height:48%"></div><div class="preview-bar-label">Sat</div></div>
+                  <div class="preview-bar-wrap"><div class="preview-bar" style="height:90%"></div><div class="preview-bar-label">Sun</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Social proof -->
+      <div class="social-proof">
+        <p>Works with the apps you already use</p>
+        <div class="badges">
+          <div class="badge"><span class="badge-icon">💬</span> Slack</div>
+          <div class="badge"><span class="badge-icon">📝</span> Notion</div>
+          <div class="badge"><span class="badge-icon">📧</span> Mail</div>
+          <div class="badge"><span class="badge-icon">💻</span> VS Code</div>
+          <div class="badge"><span class="badge-icon">🗒️</span> Notes</div>
+          <div class="badge"><span class="badge-icon">+</span> Any app</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Features ──────────────────────────────────────────────────────────── -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="features-header">
+        <div class="section-eyebrow">Features</div>
+        <h2 class="section-title">Everything you need to<br>type faster with your voice</h2>
+        <p class="section-subtitle">
+          Voxa is built for speed. Hold a key, speak, release — your words are injected directly into whatever app is in focus.
+        </p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <div class="feature-title">Hold-to-record</div>
+          <p class="feature-desc">
+            Hold any key you choose — fn, Option, or a custom key — to start recording. Release to stop. It's that instant.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎯</div>
+          <div class="feature-title">Works in any app</div>
+          <p class="feature-desc">
+            Text is injected directly into your active window. Slack, Notion, email, terminal — wherever your cursor is.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <div class="feature-title">100% local &amp; private</div>
+          <p class="feature-desc">
+            Your voice never leaves your Mac. Transcription happens entirely on-device using Apple's Speech Recognition.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🌍</div>
+          <div class="feature-title">67 languages</div>
+          <p class="feature-desc">
+            Supports over 67 languages with auto-detect. Switch between English, Spanish, French, Dutch and many more.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <div class="feature-title">Voice agent commands</div>
+          <p class="feature-desc">
+            Trigger AI actions with custom wake phrases. Say "Hey Voxa" to activate your AI agent while dictating.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <div class="feature-title">Usage dashboard</div>
+          <p class="feature-desc">
+            Track your words, time saved, and most-used apps over time. See how much faster you're working.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── How it works ───────────────────────────────────────────────────────── -->
+  <section class="how" id="how">
+    <div class="container">
+      <div class="how-inner">
+        <div>
+          <div class="section-eyebrow">How it works</div>
+          <h2 class="section-title">Three steps.<br>That's it.</h2>
+          <p class="section-subtitle" style="margin-bottom: 48px;">
+            Voxa is designed to be invisible. You'll forget it's even running — until you realise how much faster you're working.
+          </p>
+
+          <div class="steps">
+            <div class="step">
+              <div class="step-line">
+                <div class="step-num">1</div>
+                <div class="step-connector"></div>
+              </div>
+              <div class="step-body">
+                <div class="step-title">Install &amp; grant permissions</div>
+                <p class="step-desc">Open the .dmg, drag Voxa to Applications. Grant microphone and accessibility access in System Settings — takes 30 seconds.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-line">
+                <div class="step-num">2</div>
+                <div class="step-connector"></div>
+              </div>
+              <div class="step-body">
+                <div class="step-title">Hold your hotkey and speak</div>
+                <p class="step-desc">Click into any text field in any app. Hold your chosen key (default: fn) and start talking naturally.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-line">
+                <div class="step-num">3</div>
+                <div class="step-connector"></div>
+              </div>
+              <div class="step-body">
+                <div class="step-title">Your words appear instantly</div>
+                <p class="step-desc">Release the key. Voxa types your transcription directly into the active app — no copy-paste, no switching windows.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="how-visual">
+          <div class="how-visual-row how-visual-active">
+            <div class="how-visual-icon">🎙️</div>
+            <div>
+              <div class="how-visual-label">Recording…</div>
+              <div class="how-visual-sub">Hold fn key to record</div>
+            </div>
+          </div>
+          <div class="recording-pill">
+            <div class="recording-dot"></div>
+            LIVE — listening
+          </div>
+          <div class="transcript-preview">
+            "Schedule the meeting for Thursday at 3pm and send the agenda to the team beforehand"<span class="cursor-blink"></span>
+          </div>
+          <div class="how-visual-row">
+            <div class="how-visual-icon">✅</div>
+            <div>
+              <div class="how-visual-label" style="color:#C8C8C8">Injected into Slack</div>
+              <div class="how-visual-sub">42 words · 0.8s</div>
+            </div>
+          </div>
+          <div class="how-visual-row">
+            <div class="how-visual-icon">📋</div>
+            <div>
+              <div class="how-visual-label" style="color:#C8C8C8">Saved to history</div>
+              <div class="how-visual-sub">Stored locally · private</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Pricing ─────────────────────────────────────────────────────────────── -->
+  <section class="pricing" id="pricing">
+    <div class="container">
+      <div class="pricing-header">
+        <div class="section-eyebrow">Pricing</div>
+        <h2 class="section-title">Simple, honest pricing</h2>
+        <p class="section-subtitle">Start free. Upgrade when you're ready.</p>
+      </div>
+
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="plan-name">Free</div>
+          <div class="plan-price">$0 <span>/ forever</span></div>
+          <div class="plan-desc">Perfect for getting started with voice input.</div>
+          <ul class="plan-features">
+            <li><div class="check">✓</div> Hold-to-record in any app</li>
+            <li><div class="check">✓</div> On-device speech recognition</li>
+            <li><div class="check">✓</div> 67 languages</li>
+            <li><div class="check">✓</div> Custom hotkey</li>
+            <li><div class="check">✓</div> Usage dashboard</li>
+          </ul>
+          <a href="https://github.com/luijtenpim-lab/speach-to-text/releases/latest/download/Voxa-1.0.0-arm64.dmg"
+             class="plan-cta outline">
+            Download free
+          </a>
+        </div>
+
+        <div class="pricing-card featured">
+          <div class="plan-badge">COMING SOON</div>
+          <div class="plan-name">Pro</div>
+          <div class="plan-price">$20 <span>/ month</span></div>
+          <div class="plan-desc">For power users who dictate all day.</div>
+          <ul class="plan-features">
+            <li><div class="check">✓</div> Everything in Free</li>
+            <li><div class="check">✓</div> OpenAI Whisper accuracy</li>
+            <li><div class="check">✓</div> Unlimited history</li>
+            <li><div class="check">✓</div> AI voice agent</li>
+            <li><div class="check">✓</div> Priority support</li>
+          </ul>
+          <a href="#" class="plan-cta filled">Join the waitlist</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Download CTA ────────────────────────────────────────────────────────── -->
+  <section class="download-cta">
+    <div class="container">
+      <h2>Ready to type faster<br><span class="grad-text">with your voice?</span></h2>
+      <p>Free download. No account. Works in 60 seconds.</p>
+      <div class="hero-btns">
+        <a href="https://github.com/luijtenpim-lab/speach-to-text/releases/latest/download/Voxa-1.0.0-arm64.dmg"
+           class="btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <path d="M12 3v13M6 11l6 6 6-6"/><path d="M3 20h18"/>
+          </svg>
+          Download Voxa — Free
+        </a>
+      </div>
+      <p class="system-req">macOS 12 Monterey or later · Apple Silicon &amp; Intel · 18 MB</p>
+    </div>
+  </section>
+
+  <!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-logo">
+        <div class="footer-logo-mark"></div>
+        <span class="footer-logo-text grad-text">Voxa</span>
+      </div>
+      <div class="footer-right">
+        <a href="#features" class="footer-link">Features</a>
+        <a href="#pricing" class="footer-link">Pricing</a>
+        <a href="https://github.com/luijtenpim-lab/speach-to-text" class="footer-link">GitHub</a>
+        <span class="footer-copy">© 2026 Voxa</span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
