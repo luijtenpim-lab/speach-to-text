@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
     "build": "vite build && npm run swift:build && electron-builder",
+    "release": "vite build && npm run swift:build && electron-builder --publish always",
     "swift:build": "bash swift-helper/build.sh",
     "postinstall": "electron-rebuild -w better-sqlite3",
     "test": "jest"
@@ -53,6 +54,11 @@
     "files": [
       "dist/**/*",
       "electron/**/*"
-    ]
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "luijtenpim-lab",
+      "repo": "speach-to-text"
+    }
   }
 }
