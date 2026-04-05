@@ -5,8 +5,10 @@ import History from './pages/History'
 import Settings from './pages/Settings'
 import Agent from './pages/Agent'
 import Onboarding from './pages/Onboarding'
+import Auth from './pages/Auth'
 import VocaLogo from './components/VocaLogo'
 import BackgroundAccent from './components/BackgroundAccent'
+import { supabase } from './lib/supabase'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: <DashIcon /> },
@@ -17,14 +19,30 @@ const NAV = [
 
 export default function App () {
   const [onboardingDone, setOnboardingDone] = useState(null)
+  const [user, setUser] = useState(undefined) // undefined = loading, null = signed out
 
   useEffect(() => {
     window.voiceflow.getSetting('onboarding_complete').then((val) => {
       setOnboardingDone(val === 'true')
     })
+
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  if (onboardingDone === null) return null
+  if (onboardingDone === null || user === undefined) return null
+
+  // Not signed in → show auth screen
+  if (!user) return <Auth onAuth={setUser} />
 
   return (
     <HashRouter>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import LanguageModal from '../components/LanguageModal'
 import MicrophoneModal from '../components/MicrophoneModal'
+import { supabase } from '../lib/supabase'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -221,27 +222,31 @@ function SystemSection () {
 // ─── Account ─────────────────────────────────────────────────────────────────
 
 function AccountSection () {
-  const [email, setEmail] = useState(null)
+  const [user, setUser] = useState(null)
 
   useEffect(() => {
-    window.voiceflow.getSetting('account_email').then(setEmail)
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
   }, [])
+
+  async function signOut () {
+    await supabase.auth.signOut()
+    // App.jsx auth listener will redirect to Auth screen automatically
+  }
+
+  const email = user?.email
 
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
         <SectionHeader title="Account" subtitle="Manage your account and subscription" noMargin />
-        {email && (
-          <button style={styles.signOutBtn} onClick={async () => {
-            await window.voiceflow.setSetting('account_email', '')
-            setEmail(null)
-          }}>
+        {user && (
+          <button style={styles.signOutBtn} onClick={signOut}>
             Sign out
           </button>
         )}
       </div>
 
-      {email ? (
+      {user ? (
         <>
           {/* Email card */}
           <div style={styles.accountCard}>
@@ -265,22 +270,10 @@ function AccountSection () {
       ) : (
         <div style={styles.signInCard}>
           <div style={styles.signInIconWrap}><UserIcon /></div>
-          <div style={styles.signInTitle}>Sign in to Voxa</div>
+          <div style={styles.signInTitle}>Not signed in</div>
           <p style={styles.signInDesc}>
-            Sign in to sync settings, manage your subscription, and access your account.
+            You were signed out. Restart the app to sign in again.
           </p>
-          <input
-            type="email"
-            placeholder="email@example.com"
-            style={styles.emailInput}
-            onKeyDown={async (e) => {
-              if (e.key === 'Enter' && e.target.value) {
-                await window.voiceflow.setSetting('account_email', e.target.value)
-                setEmail(e.target.value)
-              }
-            }}
-          />
-          <p style={styles.hint}>Press Enter to save. Full authentication coming soon.</p>
         </div>
       )}
     </>
