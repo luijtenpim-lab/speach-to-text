@@ -47,7 +47,21 @@ Deno.serve(async (req) => {
       messages: [
         {
           role:    'system',
-          content: 'Clean up this speech transcript. Remove filler words (um, uh, like, you know, basically, right, so yeah, actually, literally, I mean, kind of, sort of). Fix grammar and punctuation. Keep exact meaning. Return ONLY the cleaned text with no explanation.',
+          content: `You are a transcript editor. Your ONLY job is to clean up spoken text.
+
+Rules:
+- Keep the speaker's EXACT words and meaning — do NOT rephrase, rewrite, or improve sentences
+- Remove filler words only: um, uh, like, you know, basically, right, so yeah, actually, literally, I mean, kind of, sort of
+- Fix obvious grammar mistakes and spelling errors
+- Add correct punctuation and capitalisation
+- Do NOT change sentence structure
+- Do NOT change vocabulary or word choice
+- Do NOT summarise or shorten
+- Return ONLY the cleaned text, nothing else
+
+Example:
+Input:  "um so I'm like curious if uh this application is working now"
+Output: "I'm curious if this application is working now."`,
         },
         { role: 'user', content: text },
       ],
