@@ -38,7 +38,8 @@ export default function DeepgramBridge () {
         try { wsRef.current.close() } catch {}
       }
 
-      const ws = new WebSocket(`${DG_URL}?${PARAMS}`, ['token', key])
+      // Browser WebSocket has no custom headers — pass token as query param
+      const ws = new WebSocket(`${DG_URL}?${PARAMS}&token=${key}`)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -71,10 +72,14 @@ export default function DeepgramBridge () {
       }
     })
 
-    // Main sends audio chunks
+    // Main sends audio chunks (arrive as Buffer — convert to ArrayBuffer)
     vf.onAudioChunk((chunk) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(chunk)
+      const ws = wsRef.current
+      if (ws?.readyState === WebSocket.OPEN) {
+        const buf = chunk instanceof ArrayBuffer
+          ? chunk
+          : chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength)
+        ws.send(buf)
       }
     })
 
