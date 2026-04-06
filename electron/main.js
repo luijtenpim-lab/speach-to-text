@@ -7,7 +7,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') })
 const db = require('./db')
 const { injectText } = require('./injector')
 const { startHotkeyListener, stopHotkeyListener, setHotkey, FN_KEYCODE } = require('./hotkey')
-const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge, cleanTranscript, setAccessToken } = require('./speechBridge')
+const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge, cleanTranscript, setAccessToken, setMainWindow } = require('./speechBridge')
 
 // --- State ---
 let mainWindow      = null
@@ -88,7 +88,10 @@ function createMainWindow () {
     : `file://${path.join(__dirname, '../dist/renderer/index.html')}`
 
   mainWindow.loadURL(url)
-  mainWindow.once('ready-to-show', () => mainWindow.show())
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show()
+    setMainWindow(mainWindow)
+  })
   mainWindow.on('close', (e) => {
     if (app.quitting) return
     e.preventDefault()
@@ -249,6 +252,25 @@ function setupIpcHandlers () {
   ipcMain.handle('auth:setToken',   (_, token) => setAccessToken(token))
   ipcMain.handle('recording:start', () => handleRecordingStart())
   ipcMain.handle('recording:stop',  () => handleRecordingStop())
+
+  // Transcript events from renderer's DeepgramBridge WebSocket
+  ipcMain.handle('transcript:partial', (_, text) => {
+    if (text === '__CONNECTED__') return  // WS open signal
+    overlayWindow?.webContents.send('transcript:partial', text)
+    mainWindow?.webContents.send('transcript:partial', text)
+  })
+
+  ipcMain.handle('transcript:final', async (_, rawText) => {
+    if (!rawText?.trim()) return
+    console.log('[Voxa] Final:', rawText)
+
+    let text = rawText
+    try { text = await cleanTranscript(rawText) } catch {}
+
+    const wordCount = text.split(/\s+/).filter(Boolean).length
+    injectText(text).catch(console.error)
+    db.insertSession({ text, word_count: wordCount, duration_ms: recordDuration, app_name: null })
+  })
 
   ipcMain.handle('app:info', () => ({
     version:         app.getVersion(),

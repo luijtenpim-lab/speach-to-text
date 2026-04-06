@@ -1,24 +1,22 @@
 const { spawn } = require('child_process')
 const path       = require('path')
 const fs         = require('fs')
-const WebSocket  = require('ws')
 const { app }    = require('electron')
 
 const SUPABASE_URL = 'https://symzpwobkyhqseslmijg.supabase.co'
 
-let helperProcess  = null
-let ws             = null       // raw Deepgram WebSocket
-let _onPartial     = null
-let _onFinal       = null
-let _onError       = null
-let _onReady       = null
-let startTime      = null
-let _accessToken   = null
-let _pendingStop   = false      // stop() called before ws opened
+let helperProcess = null
+let _onPartial    = null
+let _onFinal      = null
+let _onError      = null
+let startTime     = null
+let _accessToken  = null
+let _mainWindow   = null   // ref to send IPC events to renderer
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 function setAccessToken (token) { _accessToken = token }
+function setMainWindow  (win)   { _mainWindow  = win   }
 
 // ── Helper path ───────────────────────────────────────────────────────────────
 
@@ -30,22 +28,19 @@ function getHelperPath () {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-function initSpeechBridge ({ onPartial, onFinal, onError, onReady }) {
+function initSpeechBridge ({ onPartial, onFinal, onError }) {
   _onPartial = onPartial
   _onFinal   = onFinal
   _onError   = onError
-  _onReady   = onReady
 
   const helperPath = getHelperPath()
   try { fs.chmodSync(helperPath, 0o755) } catch {}
 
   helperProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
-  // stdout = raw PCM — forward to Deepgram only when ws is open
+  // stdout = raw PCM — forward to renderer which owns the WebSocket
   helperProcess.stdout.on('data', (chunk) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(chunk)
-    }
+    _mainWindow?.webContents.send('audio:chunk', chunk)
   })
 
   // stderr = JSON control messages
@@ -74,93 +69,25 @@ function initSpeechBridge ({ onPartial, onFinal, onError, onReady }) {
 async function startRecording () {
   if (!helperProcess) throw new Error('SpeechBridge not initialised')
 
-  _pendingStop = false
-  startTime    = Date.now()
+  startTime = Date.now()
 
-  // Get API key (fast — uses env fallback synchronously)
-  let apiKey
-  try { apiKey = await fetchDeepgramToken() }
-  catch (e) { throw new Error('No Deepgram key: ' + e.message) }
+  // Fetch key and push to renderer — renderer opens the WebSocket
+  const key = await fetchDeepgramToken()
+  _mainWindow?.webContents.send('deepgram:key', key.trim())
 
-  const params = new URLSearchParams({
-    model:            'nova-2',
-    language:         'en-US',
-    encoding:         'linear16',
-    sample_rate:      '16000',
-    channels:         '1',
-    interim_results:  'true',
-    smart_format:     'true',
-    punctuate:        'true',
-    utterance_end_ms: '800',
-    vad_events:       'true',
-  })
-
-  ws = new WebSocket(
-    `wss://api.deepgram.com/v1/listen?${params}`,
-    { headers: { Authorization: `Token ${apiKey.trim()}` } }
-  )
-
-  ws.on('open', () => {
-    console.log('[Deepgram] Connected')
-    // Start mic immediately
-    helperProcess?.stdin.write('START\n')
-
-    if (_pendingStop) {
-      // User already released — flush and close
-      console.log('[Deepgram] Stop was pending — closing stream')
-      ws.send(JSON.stringify({ type: 'CloseStream' }))
-    }
-  })
-
-  ws.on('message', (raw) => {
-    try {
-      const data = JSON.parse(raw)
-      const alt  = data?.channel?.alternatives?.[0]
-      const text = alt?.transcript ?? ''
-
-      if (!text) return
-
-      if (data.speech_final) {
-        console.log('[Deepgram] Final:', text)
-        if (_onPartial) _onPartial('')
-        if (_onFinal)   _onFinal(text)
-      } else if (data.is_final === false) {
-        if (_onPartial) _onPartial(text)
-      }
-    } catch {}
-  })
-
-  ws.on('error', (err) => {
-    console.error('[Deepgram error]', err.message)
-  })
-
-  ws.on('close', (code) => {
-    console.log('[Deepgram] Closed', code)
-    ws = null
-  })
+  // Start mic — audio chunks flow to renderer via 'audio:chunk'
+  helperProcess.stdin.write('START\n')
 }
 
 // ── Stop ──────────────────────────────────────────────────────────────────────
 
 function stopRecording () {
-  // Stop mic
   helperProcess?.stdin.write('STOP\n')
   const duration = startTime ? Date.now() - startTime : 0
   startTime = null
 
-  if (!ws) {
-    // WebSocket not created yet (key fetch still pending) — flag it
-    _pendingStop = true
-    return duration
-  }
-
-  if (ws.readyState === WebSocket.CONNECTING) {
-    // Still connecting — flag so open handler closes it
-    _pendingStop = true
-  } else if (ws.readyState === WebSocket.OPEN) {
-    // Tell Deepgram to flush remaining audio then finish
-    try { ws.send(JSON.stringify({ type: 'CloseStream' })) } catch {}
-  }
+  // Signal renderer to send CloseStream to Deepgram
+  _mainWindow?.webContents.send('audio:stop')
 
   return duration
 }
@@ -168,8 +95,6 @@ function stopRecording () {
 // ── Destroy ───────────────────────────────────────────────────────────────────
 
 function destroySpeechBridge () {
-  try { if (ws) ws.close() } catch {}
-  ws = null
   if (helperProcess) {
     helperProcess.stdin.write('EXIT\n')
     helperProcess = null
@@ -187,12 +112,11 @@ async function fetchDeepgramToken () {
       })
       if (res.ok) {
         const { key } = await res.json()
-        if (key) { console.log('[SpeechBridge] Got edge function token'); return key }
-      } else {
-        console.warn('[SpeechBridge] Edge function', res.status, '— using env key')
+        if (key) { console.log('[SpeechBridge] Edge function token OK'); return key }
       }
+      console.warn('[SpeechBridge] Edge function', res.status, '— using env key')
     } catch (e) {
-      console.warn('[SpeechBridge] Edge function failed:', e.message, '— using env key')
+      console.warn('[SpeechBridge] Edge function failed — using env key')
     }
   }
 
@@ -225,4 +149,5 @@ module.exports = {
   destroySpeechBridge,
   cleanTranscript,
   setAccessToken,
+  setMainWindow,
 }

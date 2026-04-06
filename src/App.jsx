@@ -9,6 +9,7 @@ import Auth from './pages/Auth'
 import VocaLogo from './components/VocaLogo'
 import BackgroundAccent from './components/BackgroundAccent'
 import { supabase } from './lib/supabase'
+import DeepgramBridge from './components/DeepgramBridge'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: <DashIcon /> },
@@ -48,7 +49,11 @@ export default function App () {
   // Not signed in → show auth screen
   if (!user) return <Auth onAuth={setUser} />
 
+  // DeepgramBridge is mounted once for the lifetime of the session
+
   return (
+    <>
+    <DeepgramBridge />
     <HashRouter>
       {!onboardingDone ? (
         <Routes>
@@ -106,6 +111,7 @@ export default function App () {
         </div>
       )}
     </HashRouter>
+    </>
   )
 }
 

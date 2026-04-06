@@ -33,8 +33,15 @@ contextBridge.exposeInMainWorld('voiceflow', {
   // --- Microphone list ---
   getMicrophones: () => ipcRenderer.invoke('mic:list'),
 
-  // --- Session token (renderer → main so main can call edge functions) ---
+  // --- Session token ---
   setSessionToken: (token) => ipcRenderer.invoke('auth:setToken', token),
+
+  // --- Deepgram bridge (main ↔ renderer) ---
+  onDeepgramKey:  (cb) => ipcRenderer.on('deepgram:key',   (_, key)   => cb(key)),
+  onAudioChunk:   (cb) => ipcRenderer.on('audio:chunk',    (_, chunk) => cb(chunk)),
+  onAudioStop:    (cb) => ipcRenderer.on('audio:stop',     ()         => cb()),
+  sendPartial:    (text) => ipcRenderer.invoke('transcript:partial', text),
+  sendFinal:      (text) => ipcRenderer.invoke('transcript:final',   text),
 
   // --- App info + system settings ---
   getAppInfo:     () => ipcRenderer.invoke('app:info'),
