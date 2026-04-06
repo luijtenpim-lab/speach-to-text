@@ -1,6 +1,9 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, systemPreferences } = require('electron')
 const path = require('path')
 
+// Load .env into process.env for dev
+require('dotenv').config({ path: path.join(__dirname, '../.env') })
+
 const db = require('./db')
 const { injectText } = require('./injector')
 const { startHotkeyListener, stopHotkeyListener, setHotkey, FN_KEYCODE } = require('./hotkey')
@@ -11,6 +14,7 @@ let mainWindow      = null
 let overlayWindow   = null
 let tray            = null
 let isRecording      = false
+let recordDuration   = 0
 let capturingKeycode = false
 
 // --- App setup ---
@@ -143,24 +147,22 @@ function initBridge () {
       mainWindow?.webContents.send('transcript:partial', text)
     },
 
-    // Utterance complete — clean with GPT then inject
+    // Utterance complete — clean via edge function then inject
     onFinal: async (rawText) => {
       if (!rawText.trim()) return
+      console.log('[Voxa] Final utterance:', rawText)
 
-      const openaiKey = db.getSetting('openai_api_key')
       let text = rawText
-
-      if (openaiKey) {
-        try {
-          text = await cleanTranscript(rawText, openaiKey)
-        } catch (e) {
-          console.error('[GPT cleanup]', e.message)
-        }
+      try {
+        text = await cleanTranscript(rawText)
+        console.log('[Voxa] Cleaned:', text)
+      } catch (e) {
+        console.error('[GPT cleanup failed, using raw]', e.message)
       }
 
       const wordCount = text.split(/\s+/).filter(Boolean).length
       injectText(text).catch(console.error)
-      db.insertSession({ text, word_count: wordCount, duration_ms: 0, app_name: null })
+      db.insertSession({ text, word_count: wordCount, duration_ms: recordDuration, app_name: null })
     },
 
     onError: (msg) => {

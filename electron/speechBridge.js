@@ -157,19 +157,38 @@ function destroySpeechBridge () {
 // ── Supabase edge function calls ──────────────────────────────────────────────
 
 async function fetchDeepgramToken () {
-  if (!_accessToken) throw new Error('Not logged in')
+  // Try edge function first (production path — keys stay server-side)
+  if (_accessToken) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-deepgram-token`, {
+        method:  'POST',
+        headers: {
+          Authorization:  `Bearer ${_accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      })
+      if (res.ok) {
+        const { key } = await res.json()
+        if (key) {
+          console.log('[SpeechBridge] Got temp Deepgram token from edge function')
+          return key
+        }
+      } else {
+        console.warn('[SpeechBridge] Edge function returned', res.status, '— falling back to env key')
+      }
+    } catch (e) {
+      console.warn('[SpeechBridge] Edge function failed:', e.message, '— falling back to env key')
+    }
+  }
 
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/get-deepgram-token`, {
-    method:  'POST',
-    headers: {
-      Authorization:  `Bearer ${_accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
+  // Fallback: use key from env (dev mode / before edge function is working)
+  const envKey = process.env.DEEPGRAM_API_KEY
+  if (envKey) {
+    console.log('[SpeechBridge] Using DEEPGRAM_API_KEY from env')
+    return envKey
+  }
 
-  if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`)
-  const { key } = await res.json()
-  return key
+  throw new Error('No Deepgram key available — set DEEPGRAM_API_KEY in .env or log in')
 }
 
 async function cleanTranscript (text) {
