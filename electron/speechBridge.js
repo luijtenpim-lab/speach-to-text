@@ -1,42 +1,34 @@
-const { spawn } = require('child_process')
-const path       = require('path')
-const fs         = require('fs')
-const { app }    = require('electron')
+const { spawn }  = require('child_process')
+const path        = require('path')
+const fs          = require('fs')
+const WebSocket   = require('ws')
+const { app }     = require('electron')
 
 const SUPABASE_URL = 'https://symzpwobkyhqseslmijg.supabase.co'
 
-let helperProcess  = null
-let _onPartial     = null
-let _onFinal       = null
-let _onError       = null
-let startTime      = null
-let _accessToken   = null
-let _mainWindow    = null
-let _cachedKey     = null   // pre-fetched Deepgram key — refreshed every 50s
+let helperProcess = null
+let ws            = null
+let _onPartial    = null
+let _onFinal      = null
+let _onError      = null
+let startTime     = null
+let _accessToken  = null
+let _cachedKey    = null
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 function setAccessToken (token) { _accessToken = token }
-function setMainWindow  (win)   {
-  _mainWindow = win
-  // Pre-fetch key as soon as we have the window
-  refreshKey()
-}
 
-// ── Key cache — refreshed before expiry ───────────────────────────────────────
+// ── Key cache — fetch once at startup, refresh every 50s ──────────────────────
 
 async function refreshKey () {
   try {
-    const key = await fetchDeepgramToken()
-    _cachedKey = key
-    console.log('[SpeechBridge] Deepgram key cached')
-    // Refresh every 50s (edge function tokens expire in 60s)
-    setTimeout(refreshKey, 50_000)
+    _cachedKey = await fetchDeepgramToken()
+    console.log('[SpeechBridge] Deepgram key ready')
   } catch (e) {
-    console.error('[SpeechBridge] Key refresh failed:', e.message)
-    // Retry in 10s
-    setTimeout(refreshKey, 10_000)
+    console.error('[SpeechBridge] Key fetch failed:', e.message)
   }
+  setTimeout(refreshKey, 50_000)
 }
 
 // ── Helper path ───────────────────────────────────────────────────────────────
@@ -59,9 +51,11 @@ function initSpeechBridge ({ onPartial, onFinal, onError }) {
 
   helperProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
-  // stdout = raw PCM — send to renderer as binary IPC
+  // stdout = raw PCM → forward to Deepgram WebSocket
   helperProcess.stdout.on('data', (chunk) => {
-    _mainWindow?.webContents.send('audio:chunk', chunk)
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(chunk)
+    }
   })
 
   // stderr = JSON control messages
@@ -83,23 +77,70 @@ function initSpeechBridge ({ onPartial, onFinal, onError }) {
     if (code !== 0 && _onError) _onError(`SpeechHelper exited: ${code}`)
     helperProcess = null
   })
+
+  // Pre-fetch key immediately
+  refreshKey()
 }
 
-// ── Start — fully synchronous ─────────────────────────────────────────────────
+// ── Start ─────────────────────────────────────────────────────────────────────
 
 function startRecording () {
   if (!helperProcess) throw new Error('SpeechBridge not initialised')
-  if (!_cachedKey)    throw new Error('Deepgram key not ready yet — try again in a moment')
+  if (!_cachedKey)    throw new Error('Deepgram key not ready — try again in a moment')
 
   startTime = Date.now()
 
-  // Send cached key to renderer → renderer opens WebSocket immediately
-  _mainWindow?.webContents.send('deepgram:key', _cachedKey)
+  const params = new URLSearchParams({
+    model:           'nova-2',
+    language:        'en-US',
+    encoding:        'linear16',
+    sample_rate:     '16000',
+    channels:        '1',
+    interim_results: 'true',
+    punctuate:       'true',
+    endpointing:     '800',
+  })
 
-  // Start mic
-  helperProcess.stdin.write('START\n')
+  ws = new WebSocket(
+    `wss://api.deepgram.com/v1/listen?${params}`,
+    {
+      headers: {
+        Authorization: `Token ${_cachedKey}`,
+        Origin: 'http://localhost',   // required — Deepgram rejects file:// origin
+      },
+    }
+  )
 
-  console.log('[SpeechBridge] Recording started, key sent to renderer')
+  ws.on('open', () => {
+    console.log('[Deepgram] Connected ✓')
+    helperProcess?.stdin.write('START\n')
+  })
+
+  ws.on('message', (raw) => {
+    try {
+      const data = JSON.parse(raw)
+      const text = data?.channel?.alternatives?.[0]?.transcript ?? ''
+      if (!text) return
+
+      if (data.speech_final) {
+        console.log('[Deepgram] Final:', text)
+        if (_onPartial) _onPartial('')
+        if (_onFinal)   _onFinal(text)
+      } else if (data.is_final === false) {
+        if (_onPartial) _onPartial(text)
+      }
+    } catch {}
+  })
+
+  ws.on('error', (err) => {
+    console.error('[Deepgram] Error:', err.message)
+    if (_onError) _onError(err.message)
+  })
+
+  ws.on('close', (code) => {
+    console.log('[Deepgram] Closed', code)
+    ws = null
+  })
 }
 
 // ── Stop ──────────────────────────────────────────────────────────────────────
@@ -108,13 +149,19 @@ function stopRecording () {
   helperProcess?.stdin.write('STOP\n')
   const duration = startTime ? Date.now() - startTime : 0
   startTime = null
-  _mainWindow?.webContents.send('audio:stop')
+
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'CloseStream' }))
+  }
+
   return duration
 }
 
 // ── Destroy ───────────────────────────────────────────────────────────────────
 
 function destroySpeechBridge () {
+  try { ws?.close() } catch {}
+  ws = null
   if (helperProcess) {
     helperProcess.stdin.write('EXIT\n')
     helperProcess = null
@@ -134,15 +181,10 @@ async function fetchDeepgramToken () {
         const { key } = await res.json()
         if (key) return key
       }
-      console.warn('[SpeechBridge] Edge function', res.status, '— using env key')
-    } catch {
-      console.warn('[SpeechBridge] Edge function failed — using env key')
-    }
+    } catch {}
   }
-
   const envKey = process.env.DEEPGRAM_API_KEY
   if (envKey) return envKey
-
   throw new Error('No Deepgram key available')
 }
 
@@ -169,5 +211,4 @@ module.exports = {
   destroySpeechBridge,
   cleanTranscript,
   setAccessToken,
-  setMainWindow,
 }

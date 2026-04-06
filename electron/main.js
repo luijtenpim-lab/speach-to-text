@@ -7,7 +7,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') })
 const db = require('./db')
 const { injectText } = require('./injector')
 const { startHotkeyListener, stopHotkeyListener, setHotkey, FN_KEYCODE } = require('./hotkey')
-const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge, cleanTranscript, setAccessToken, setMainWindow } = require('./speechBridge')
+const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge, cleanTranscript, setAccessToken } = require('./speechBridge')
 
 // --- State ---
 let mainWindow      = null
@@ -88,10 +88,7 @@ function createMainWindow () {
     : `file://${path.join(__dirname, '../dist/renderer/index.html')}`
 
   mainWindow.loadURL(url)
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show()
-    setMainWindow(mainWindow)
-  })
+  mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.on('close', (e) => {
     if (app.quitting) return
     e.preventDefault()
@@ -142,15 +139,11 @@ function createTray () {
 // --- Speech bridge (Deepgram + GPT-4o mini) ---
 function initBridge () {
   initSpeechBridge({
-    onReady: () => {},
-
-    // Interim partial — show in overlay only (not injected)
     onPartial: (text) => {
       overlayWindow?.webContents.send('transcript:partial', text)
       mainWindow?.webContents.send('transcript:partial', text)
     },
 
-    // Utterance complete — clean via edge function then inject
     onFinal: async (rawText) => {
       if (!rawText.trim()) return
       console.log('[Voxa] Final utterance:', rawText)
