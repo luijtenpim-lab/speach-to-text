@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('voiceflow', {
   // --- Microphone list ---
   getMicrophones: () => ipcRenderer.invoke('mic:list'),
 
+  // --- Session token (renderer → main so main can call edge functions) ---
+  setSessionToken: (token) => ipcRenderer.invoke('auth:setToken', token),
+
   // --- App info + system settings ---
   getAppInfo:     () => ipcRenderer.invoke('app:info'),
   getSystemAll:   () => ipcRenderer.invoke('system:getAll'),

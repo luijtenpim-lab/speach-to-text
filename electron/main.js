@@ -4,14 +4,13 @@ const path = require('path')
 const db = require('./db')
 const { injectText } = require('./injector')
 const { startHotkeyListener, stopHotkeyListener, setHotkey, FN_KEYCODE } = require('./hotkey')
-const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge, cleanTranscript } = require('./speechBridge')
+const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge, cleanTranscript, setAccessToken } = require('./speechBridge')
 
 // --- State ---
 let mainWindow      = null
 let overlayWindow   = null
 let tray            = null
-let isRecording     = false
-let recordDuration  = 0
+let isRecording      = false
 let capturingKeycode = false
 
 // --- App setup ---
@@ -187,11 +186,7 @@ function handleRecordingStart () {
   overlayWindow?.webContents.send('recording:start')
   mainWindow?.webContents.send('recording:start')
 
-  const dgKey = db.getSetting('deepgram_api_key')
-    || process.env.DEEPGRAM_API_KEY
-    || ''
-
-  startRecording(dgKey).catch((err) => {
+  startRecording().catch((err) => {
     console.error('[Voxa] Failed to start recording:', err.message)
     handleRecordingStop()
   })
@@ -244,6 +239,7 @@ function setupIpcHandlers () {
   ipcMain.handle('hotkey:stopCapture', () => { capturingKeycode = false })
   ipcMain.handle('mic:list', async () => [])
 
+  ipcMain.handle('auth:setToken',   (_, token) => setAccessToken(token))
   ipcMain.handle('recording:start', () => handleRecordingStart())
   ipcMain.handle('recording:stop',  () => handleRecordingStop())
 

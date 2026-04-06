@@ -26,14 +26,18 @@ export default function App () {
       setOnboardingDone(val === 'true')
     })
 
-    // Check current session
+    // Check current session and forward token to main process
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
+      if (session?.access_token) {
+        window.voiceflow.setSessionToken(session.access_token)
+      }
     })
 
-    // Listen for auth changes
+    // Listen for auth changes — also forward token to main process
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+      window.voiceflow.setSessionToken(session?.access_token ?? '')
     })
 
     return () => subscription.unsubscribe()

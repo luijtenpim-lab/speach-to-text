@@ -1,7 +1,9 @@
-const { spawn }  = require('child_process')
-const path        = require('path')
-const fs          = require('fs')
-const { app }     = require('electron')
+const { spawn } = require('child_process')
+const path       = require('path')
+const fs         = require('fs')
+const { app }    = require('electron')
+
+const SUPABASE_URL = 'https://symzpwobkyhqseslmijg.supabase.co'
 
 let helperProcess = null
 let dgConnection  = null
@@ -10,6 +12,13 @@ let _onFinal      = null
 let _onError      = null
 let _onReady      = null
 let startTime     = null
+let _accessToken  = null   // Supabase JWT — set via setAccessToken()
+
+// ── Auth token (passed from renderer after login) ─────────────────────────────
+
+function setAccessToken (token) {
+  _accessToken = token
+}
 
 // ── Helper path ───────────────────────────────────────────────────────────────
 
@@ -33,11 +42,9 @@ function initSpeechBridge ({ onPartial, onFinal, onError, onReady }) {
   console.log('[SpeechBridge] Launching helper:', helperPath)
   helperProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
-  // stdout = raw PCM audio → forward to Deepgram when connected
+  // stdout = raw PCM audio → forward to Deepgram
   helperProcess.stdout.on('data', (chunk) => {
-    try {
-      if (dgConnection) dgConnection.send(chunk)
-    } catch {}
+    try { if (dgConnection) dgConnection.send(chunk) } catch {}
   })
 
   // stderr = JSON control messages
@@ -69,11 +76,14 @@ function handleControl (msg) {
 
 // ── Start recording ───────────────────────────────────────────────────────────
 
-async function startRecording (deepgramApiKey) {
+async function startRecording () {
   if (!helperProcess) throw new Error('SpeechBridge not initialised')
 
+  // Get a short-lived Deepgram key from our Supabase edge function
+  const tempKey = await fetchDeepgramToken()
+
   const { createClient } = require('@deepgram/sdk')
-  const deepgram  = createClient(deepgramApiKey)
+  const deepgram = createClient(tempKey)
 
   dgConnection = deepgram.listen.live({
     model:            'nova-2',
@@ -95,24 +105,21 @@ async function startRecording (deepgramApiKey) {
   })
 
   dgConnection.on('Results', async (data) => {
-    const alt        = data.channel?.alternatives?.[0]
-    const transcript = alt?.transcript ?? ''
+    const transcript = data.channel?.alternatives?.[0]?.transcript ?? ''
     if (!transcript) return
 
     if (data.speech_final) {
-      // End of utterance — clean with GPT then fire onFinal
       console.log('[Deepgram] Utterance:', transcript)
       if (_onPartial) _onPartial('') // clear overlay
-      if (_onFinal)   _onFinal(transcript) // fire immediately (raw)
+      if (_onFinal)   _onFinal(transcript)
     } else if (!data.is_final) {
-      // Interim — show in overlay only
       if (_onPartial) _onPartial(transcript)
     }
   })
 
   dgConnection.on('error', (err) => {
-    console.error('[Deepgram] Error:', err)
-    if (_onError) _onError('Deepgram: ' + err?.message)
+    console.error('[Deepgram]', err)
+    if (_onError) _onError('Deepgram error')
   })
 
   dgConnection.on('close', () => {
@@ -128,7 +135,6 @@ function stopRecording () {
   const duration = startTime ? Date.now() - startTime : 0
   startTime = null
 
-  // Give Deepgram ~1.5s to process remaining audio, then close
   setTimeout(() => {
     try { dgConnection?.requestClose() } catch {}
     dgConnection = null
@@ -148,26 +154,43 @@ function destroySpeechBridge () {
   }
 }
 
-// ── GPT-4o mini cleanup ───────────────────────────────────────────────────────
+// ── Supabase edge function calls ──────────────────────────────────────────────
 
-async function cleanTranscript (text, openaiApiKey) {
-  const { OpenAI } = require('openai')
-  const openai     = new OpenAI({ apiKey: openaiApiKey })
+async function fetchDeepgramToken () {
+  if (!_accessToken) throw new Error('Not logged in')
 
-  const res = await openai.chat.completions.create({
-    model:       'gpt-4o-mini',
-    temperature: 0,
-    max_tokens:  500,
-    messages: [
-      {
-        role:    'system',
-        content: 'You are a transcript cleaner. Remove filler words (um, uh, like, you know, basically, right, so yeah, actually, literally, I mean, kind of, sort of). Fix grammar and punctuation. Keep exact meaning. Return ONLY the cleaned text.',
-      },
-      { role: 'user', content: text },
-    ],
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/get-deepgram-token`, {
+    method:  'POST',
+    headers: {
+      Authorization:  `Bearer ${_accessToken}`,
+      'Content-Type': 'application/json',
+    },
   })
 
-  return res.choices[0].message.content?.trim() ?? text
+  if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`)
+  const { key } = await res.json()
+  return key
+}
+
+async function cleanTranscript (text) {
+  if (!_accessToken) return text
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/cleanup`, {
+      method:  'POST',
+      headers: {
+        Authorization:  `Bearer ${_accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text }),
+    })
+
+    if (!res.ok) return text
+    const { cleaned } = await res.json()
+    return cleaned ?? text
+  } catch {
+    return text
+  }
 }
 
 module.exports = {
@@ -176,4 +199,5 @@ module.exports = {
   stopRecording,
   destroySpeechBridge,
   cleanTranscript,
+  setAccessToken,
 }
