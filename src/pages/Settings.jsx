@@ -125,20 +125,15 @@ function DefaultsSection () {
       <SettingRow
         icon={<KeyboardIcon />}
         title="Keyboard shortcut"
-        desc="The key you hold to record. Press 'Change' then press your preferred key."
+        desc="The key you hold to record. Press 'Change' then press your preferred key. Default: fn — if fn doesn't respond, try Right Option (⌥)."
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ ...styles.keyBadge, ...(capturing ? styles.keyBadgeCapturing : {}) }}>
-            {capturing ? 'Press any key…' : hotkeyLabel(hotkeyCode)}
-          </div>
-          <ActionBtn onClick={capturing ? undefined : startCapture} disabled={capturing}>
-            {capturing ? 'Waiting…' : 'Change'}
-          </ActionBtn>
-          {saved && <span style={styles.savedBadge}>Saved ✓</span>}
+        <div style={{ ...styles.keyBadge, ...(capturing ? styles.keyBadgeCapturing : {}) }}>
+          {capturing ? 'Press any key…' : hotkeyLabel(hotkeyCode)}
         </div>
-        <p style={styles.hint}>
-          Default: <strong style={{ color: C.accentText }}>fn</strong>. If fn doesn't respond, try Right Option (⌥) or another key.
-        </p>
+        <ActionBtn onClick={capturing ? undefined : startCapture} disabled={capturing}>
+          {capturing ? 'Waiting…' : 'Change'}
+        </ActionBtn>
+        {saved && <span style={styles.savedBadge}>Saved ✓</span>}
       </SettingRow>
 
       <SettingRow
@@ -367,17 +362,15 @@ function SectionHeader ({ title, subtitle, noMargin }) {
 function SettingRow ({ icon, title, desc, badge, children }) {
   return (
     <div style={styles.settingRow}>
-      <div style={styles.settingLeft}>
-        <div style={styles.settingLabelRow}>
-          <span style={styles.settingIconWrap}>{icon}</span>
-          <div>
-            <div style={styles.settingTitle}>{title}</div>
-            <div style={styles.settingDesc}>{desc}</div>
-            {badge && <span style={styles.settingBadge}>{badge}</span>}
-          </div>
+      <div style={styles.settingLabelRow}>
+        <span style={styles.settingIconWrap}>{icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={styles.settingTitle}>{title}</div>
+          <div style={styles.settingDesc}>{desc}</div>
+          {badge && <span style={styles.settingBadge}>{badge}</span>}
         </div>
       </div>
-      <div style={styles.settingRight}>{children}</div>
+      <div style={styles.settingActions}>{children}</div>
     </div>
   )
 }
@@ -492,10 +485,9 @@ const styles = {
   pageSubtitle:   { color: C.text3, fontSize: 13, lineHeight: 1.5 },
 
   // Setting rows
-  settingRow:     { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 22px', marginBottom: 10, gap: 24 },
-  settingLeft:    { flex: 1, minWidth: 0 },
-  settingRight:   { flexShrink: 0 },
+  settingRow:     { display: 'flex', flexDirection: 'column', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 22px', marginBottom: 10, gap: 14 },
   settingLabelRow:{ display: 'flex', alignItems: 'flex-start', gap: 12 },
+  settingActions: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingLeft: 44 },
   settingIconWrap:{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.text3, flexShrink: 0, marginTop: 1 },
   settingTitle:   { fontWeight: 600, fontSize: 14, marginBottom: 3, color: C.text1 },
   settingDesc:    { color: C.text3, fontSize: 12, lineHeight: 1.5 },
