@@ -1,24 +1,24 @@
 const { spawn } = require('child_process')
 const path       = require('path')
 const fs         = require('fs')
+const WebSocket  = require('ws')
 const { app }    = require('electron')
 
 const SUPABASE_URL = 'https://symzpwobkyhqseslmijg.supabase.co'
 
-let helperProcess = null
-let dgConnection  = null
-let _onPartial    = null
-let _onFinal      = null
-let _onError      = null
-let _onReady      = null
-let startTime     = null
-let _accessToken  = null   // Supabase JWT — set via setAccessToken()
+let helperProcess  = null
+let ws             = null       // raw Deepgram WebSocket
+let _onPartial     = null
+let _onFinal       = null
+let _onError       = null
+let _onReady       = null
+let startTime      = null
+let _accessToken   = null
+let _pendingStop   = false      // stop() called before ws opened
 
-// ── Auth token (passed from renderer after login) ─────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
-function setAccessToken (token) {
-  _accessToken = token
-}
+function setAccessToken (token) { _accessToken = token }
 
 // ── Helper path ───────────────────────────────────────────────────────────────
 
@@ -39,27 +39,27 @@ function initSpeechBridge ({ onPartial, onFinal, onError, onReady }) {
   const helperPath = getHelperPath()
   try { fs.chmodSync(helperPath, 0o755) } catch {}
 
-  console.log('[SpeechBridge] Launching helper:', helperPath)
   helperProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
-  // stdout = raw PCM audio → forward to Deepgram WebSocket
+  // stdout = raw PCM — forward to Deepgram only when ws is open
   helperProcess.stdout.on('data', (chunk) => {
-    try {
-      if (dgConnection && dgConnection.readyState === 1) {
-        dgConnection.send(chunk)
-      }
-    } catch {}
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(chunk)
+    }
   })
 
   // stderr = JSON control messages
-  let stderrBuf = ''
+  let buf = ''
   helperProcess.stderr.on('data', (data) => {
-    stderrBuf += data.toString()
-    const lines = stderrBuf.split('\n')
-    stderrBuf   = lines.pop()
+    buf += data.toString()
+    const lines = buf.split('\n')
+    buf = lines.pop()
     for (const line of lines) {
       if (!line.trim()) continue
-      try { handleControl(JSON.parse(line)) } catch {}
+      try {
+        const msg = JSON.parse(line)
+        if (msg.type === 'error' && _onError) _onError(msg.message)
+      } catch {}
     }
   })
 
@@ -69,51 +69,45 @@ function initSpeechBridge ({ onPartial, onFinal, onError, onReady }) {
   })
 }
 
-function handleControl (msg) {
-  switch (msg.type) {
-    case 'authorized': break
-    case 'ready':   if (_onReady) _onReady(); break
-    case 'stopped': break
-    case 'error':   if (_onError) _onError(msg.message); break
-  }
-}
-
-// ── Start recording ───────────────────────────────────────────────────────────
+// ── Start ─────────────────────────────────────────────────────────────────────
 
 async function startRecording () {
   if (!helperProcess) throw new Error('SpeechBridge not initialised')
 
-  const tempKey = await fetchDeepgramToken()
+  _pendingStop = false
+  startTime    = Date.now()
 
-  // Use raw WebSocket — simpler and more predictable than the SDK
-  const WebSocket = require('ws')
+  // Get API key (fast — uses env fallback synchronously)
+  let apiKey
+  try { apiKey = await fetchDeepgramToken() }
+  catch (e) { throw new Error('No Deepgram key: ' + e.message) }
+
   const params = new URLSearchParams({
     model:            'nova-2',
     language:         'en-US',
-    smart_format:     'true',
-    punctuate:        'true',
-    interim_results:  'true',
-    utterance_end_ms: '800',
-    vad_events:       'true',
     encoding:         'linear16',
     sample_rate:      '16000',
     channels:         '1',
+    interim_results:  'true',
+    smart_format:     'true',
+    punctuate:        'true',
+    utterance_end_ms: '800',
+    vad_events:       'true',
   })
 
-  const ws = new WebSocket(
+  ws = new WebSocket(
     `wss://api.deepgram.com/v1/listen?${params}`,
-    { headers: { Authorization: `Token ${tempKey}` } }
+    { headers: { Authorization: `Token ${apiKey.trim()}` } }
   )
-
-  dgConnection = ws
-  let stopPending = false  // if user stops before open, close cleanly after open
 
   ws.on('open', () => {
     console.log('[Deepgram] Connected')
-    startTime = Date.now()
+    // Start mic immediately
     helperProcess?.stdin.write('START\n')
-    if (stopPending) {
-      // user already released key — send close signal and end
+
+    if (_pendingStop) {
+      // User already released — flush and close
+      console.log('[Deepgram] Stop was pending — closing stream')
       ws.send(JSON.stringify({ type: 'CloseStream' }))
     }
   })
@@ -121,49 +115,51 @@ async function startRecording () {
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw)
-      const transcript = data?.channel?.alternatives?.[0]?.transcript ?? ''
-      if (!transcript) return
+      const alt  = data?.channel?.alternatives?.[0]
+      const text = alt?.transcript ?? ''
+
+      if (!text) return
 
       if (data.speech_final) {
-        console.log('[Deepgram] Utterance:', transcript)
+        console.log('[Deepgram] Final:', text)
         if (_onPartial) _onPartial('')
-        if (_onFinal)   _onFinal(transcript)
+        if (_onFinal)   _onFinal(text)
       } else if (data.is_final === false) {
-        if (_onPartial) _onPartial(transcript)
+        if (_onPartial) _onPartial(text)
       }
     } catch {}
   })
 
   ws.on('error', (err) => {
     console.error('[Deepgram error]', err.message)
-    if (_onError) _onError('Deepgram: ' + err.message)
   })
 
-  ws.on('close', (code, reason) => {
-    console.log('[Deepgram] Closed', code, reason?.toString())
-    dgConnection = null
+  ws.on('close', (code) => {
+    console.log('[Deepgram] Closed', code)
+    ws = null
   })
-
-  // Expose stopPending setter so stopRecording can signal before open
-  ws._stopPending = () => { stopPending = true }
 }
 
-// ── Stop recording ────────────────────────────────────────────────────────────
+// ── Stop ──────────────────────────────────────────────────────────────────────
 
 function stopRecording () {
+  // Stop mic
   helperProcess?.stdin.write('STOP\n')
   const duration = startTime ? Date.now() - startTime : 0
   startTime = null
 
-  if (dgConnection) {
-    const ws = dgConnection
-    if (ws.readyState === 0) {
-      // Still connecting — flag it so open handler closes cleanly
-      ws._stopPending?.()
-    } else if (ws.readyState === 1) {
-      // Open — send CloseStream so Deepgram flushes remaining audio
-      try { ws.send(JSON.stringify({ type: 'CloseStream' })) } catch {}
-    }
+  if (!ws) {
+    // WebSocket not created yet (key fetch still pending) — flag it
+    _pendingStop = true
+    return duration
+  }
+
+  if (ws.readyState === WebSocket.CONNECTING) {
+    // Still connecting — flag so open handler closes it
+    _pendingStop = true
+  } else if (ws.readyState === WebSocket.OPEN) {
+    // Tell Deepgram to flush remaining audio then finish
+    try { ws.send(JSON.stringify({ type: 'CloseStream' })) } catch {}
   }
 
   return duration
@@ -172,70 +168,54 @@ function stopRecording () {
 // ── Destroy ───────────────────────────────────────────────────────────────────
 
 function destroySpeechBridge () {
-  try { dgConnection?.close() } catch {}
-  dgConnection = null
+  try { if (ws) ws.close() } catch {}
+  ws = null
   if (helperProcess) {
     helperProcess.stdin.write('EXIT\n')
     helperProcess = null
   }
 }
 
-// ── Supabase edge function calls ──────────────────────────────────────────────
+// ── Token fetch ───────────────────────────────────────────────────────────────
 
 async function fetchDeepgramToken () {
-  // Try edge function first (production path — keys stay server-side)
   if (_accessToken) {
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/get-deepgram-token`, {
         method:  'POST',
-        headers: {
-          Authorization:  `Bearer ${_accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${_accessToken}`, 'Content-Type': 'application/json' },
       })
       if (res.ok) {
         const { key } = await res.json()
-        if (key) {
-          console.log('[SpeechBridge] Got temp Deepgram token from edge function')
-          return key
-        }
+        if (key) { console.log('[SpeechBridge] Got edge function token'); return key }
       } else {
-        console.warn('[SpeechBridge] Edge function returned', res.status, '— falling back to env key')
+        console.warn('[SpeechBridge] Edge function', res.status, '— using env key')
       }
     } catch (e) {
-      console.warn('[SpeechBridge] Edge function failed:', e.message, '— falling back to env key')
+      console.warn('[SpeechBridge] Edge function failed:', e.message, '— using env key')
     }
   }
 
-  // Fallback: use key from env (dev mode / before edge function is working)
   const envKey = process.env.DEEPGRAM_API_KEY
-  if (envKey) {
-    console.log('[SpeechBridge] Using DEEPGRAM_API_KEY from env')
-    return envKey
-  }
+  if (envKey) { console.log('[SpeechBridge] Using env DEEPGRAM_API_KEY'); return envKey }
 
-  throw new Error('No Deepgram key available — set DEEPGRAM_API_KEY in .env or log in')
+  throw new Error('No Deepgram key available')
 }
+
+// ── GPT cleanup via edge function ─────────────────────────────────────────────
 
 async function cleanTranscript (text) {
   if (!_accessToken) return text
-
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/cleanup`, {
       method:  'POST',
-      headers: {
-        Authorization:  `Bearer ${_accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ text }),
+      headers: { Authorization: `Bearer ${_accessToken}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ text }),
     })
-
     if (!res.ok) return text
     const { cleaned } = await res.json()
     return cleaned ?? text
-  } catch {
-    return text
-  }
+  } catch { return text }
 }
 
 module.exports = {
