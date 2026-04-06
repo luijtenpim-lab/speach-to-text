@@ -125,15 +125,17 @@ function DefaultsSection () {
       <SettingRow
         icon={<KeyboardIcon />}
         title="Keyboard shortcut"
-        desc="The key you hold to record. Press 'Change' then press your preferred key. Default: fn — if fn doesn't respond, try Right Option (⌥)."
+        desc="Hold to record. Default: fn — if unresponsive, try Right Option (⌥)."
       >
         <div style={{ ...styles.keyBadge, ...(capturing ? styles.keyBadgeCapturing : {}) }}>
           {capturing ? 'Press any key…' : hotkeyLabel(hotkeyCode)}
         </div>
-        <ActionBtn onClick={capturing ? undefined : startCapture} disabled={capturing}>
-          {capturing ? 'Waiting…' : 'Change'}
-        </ActionBtn>
-        {saved && <span style={styles.savedBadge}>Saved ✓</span>}
+        {saved
+          ? <span style={styles.savedBadge}>Saved ✓</span>
+          : <ActionBtn onClick={capturing ? undefined : startCapture} disabled={capturing}>
+              {capturing ? 'Waiting…' : 'Change'}
+            </ActionBtn>
+        }
       </SettingRow>
 
       <SettingRow
@@ -362,7 +364,7 @@ function SectionHeader ({ title, subtitle, noMargin }) {
 function SettingRow ({ icon, title, desc, badge, children }) {
   return (
     <div style={styles.settingRow}>
-      <div style={styles.settingLabelRow}>
+      <div style={styles.settingLeft}>
         <span style={styles.settingIconWrap}>{icon}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.settingTitle}>{title}</div>
@@ -370,7 +372,7 @@ function SettingRow ({ icon, title, desc, badge, children }) {
           {badge && <span style={styles.settingBadge}>{badge}</span>}
         </div>
       </div>
-      <div style={styles.settingActions}>{children}</div>
+      <div style={styles.settingRight}>{children}</div>
     </div>
   )
 }
@@ -485,9 +487,10 @@ const styles = {
   pageSubtitle:   { color: C.text3, fontSize: 13, lineHeight: 1.5 },
 
   // Setting rows
-  settingRow:     { display: 'flex', flexDirection: 'column', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 22px', marginBottom: 10, gap: 14 },
-  settingLabelRow:{ display: 'flex', alignItems: 'flex-start', gap: 12 },
-  settingActions: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingLeft: 44 },
+  settingRow:     { display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 22px', marginBottom: 10, gap: 20 },
+  settingLeft:    { display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0 },
+  settingRight:   { display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 },
+  settingLabelRow:{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0 },
   settingIconWrap:{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.text3, flexShrink: 0, marginTop: 1 },
   settingTitle:   { fontWeight: 600, fontSize: 14, marginBottom: 3, color: C.text1 },
   settingDesc:    { color: C.text3, fontSize: 12, lineHeight: 1.5 },
@@ -537,6 +540,6 @@ const styles = {
   keyBadge:       { background: C.surfaceDeep, border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 8, padding: '8px 18px', fontSize: 14, fontWeight: 700, minWidth: 72, textAlign: 'center', color: C.accentText, fontFamily: '"JetBrains Mono","SF Mono",monospace' },
   keyBadgeCapturing: { border: `1px solid ${C.borderAccent}`, boxShadow: '0 0 10px rgba(217,70,239,0.25)', color: C.accentBright },
   savedBadge:     { color: '#34D399', fontSize: 12, fontWeight: 700 },
-  actionBtn:      { background: 'linear-gradient(135deg, #9333EA, #D946EF)', border: 'none', borderRadius: 9, padding: '10px 18px', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 0 0 1px rgba(217,70,239,0.5)', transition: 'all 0.15s', whiteSpace: 'nowrap' },
+  actionBtn:      { background: 'linear-gradient(135deg, #9333EA, #D946EF)', border: 'none', borderRadius: 9, padding: '9px 0', width: 148, textAlign: 'center', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 0 1px rgba(217,70,239,0.5)', transition: 'all 0.15s', whiteSpace: 'nowrap', flexShrink: 0 },
   actionBtnDisabled: { background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.border}`, color: C.text3, cursor: 'not-allowed', boxShadow: 'none' },
 }
