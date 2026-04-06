@@ -16,7 +16,7 @@ let capturingKeycode = false
 
 // --- App setup ---
 app.whenReady().then(() => {
-  app.dock?.hide() // No dock icon — menu bar utility
+  createAppMenu()
   createTray()
   createMainWindow()
   createOverlayWindow()
@@ -27,9 +27,50 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  app.quitting = true
   destroySpeechBridge()
   stopHotkeyListener()
 })
+
+// Allow Cmd+Q to fully quit
+app.on('window-all-closed', () => app.quit())
+
+// --- App menu (enables Cmd+Q, Cmd+W, etc.) ---
+function createAppMenu () {
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'Voxa',
+      submenu: [
+        { label: 'About Voxa', role: 'about' },
+        { type: 'separator' },
+        { label: 'Hide Voxa', accelerator: 'Cmd+H', role: 'hide' },
+        { type: 'separator' },
+        { label: 'Quit Voxa', accelerator: 'Cmd+Q', click: () => app.exit(0) },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { label: 'Open Voxa', accelerator: 'Cmd+1', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+        { label: 'Close Window', accelerator: 'Cmd+W', click: () => mainWindow?.hide() },
+        { role: 'minimize' },
+      ],
+    },
+  ])
+  Menu.setApplicationMenu(menu)
+}
 
 // --- Windows ---
 function createMainWindow () {
@@ -55,8 +96,9 @@ function createMainWindow () {
   mainWindow.loadURL(url)
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.on('close', (e) => {
+    if (app.quitting) return // allow Cmd+Q to fully close
     e.preventDefault()
-    mainWindow.hide() // Keep running in background
+    mainWindow.hide() // red X = hide to tray, Cmd+Q = full quit
   })
 }
 
