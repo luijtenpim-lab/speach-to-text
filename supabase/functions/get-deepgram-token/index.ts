@@ -27,25 +27,10 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
   }
 
-  // ── 2. Get Deepgram project ID ─────────────────────────────────────────────
-  const dgKey = Deno.env.get('DEEPGRAM_API_KEY')!
+  // ── 2. Create short-lived Deepgram key ─────────────────────────────────────
+  const dgKey     = Deno.env.get('DEEPGRAM_API_KEY')!
+  const projectId = 'ad351d86-bf36-4102-bd57-4361784c906e'
 
-  const projectsRes = await fetch('https://api.deepgram.com/v1/projects', {
-    headers: { Authorization: `Token ${dgKey}` },
-  })
-
-  if (!projectsRes.ok) {
-    return new Response(JSON.stringify({ error: 'Failed to reach Deepgram' }), { status: 502, headers: corsHeaders })
-  }
-
-  const projects = await projectsRes.json()
-  const projectId = projects.projects?.[0]?.project_id
-
-  if (!projectId) {
-    return new Response(JSON.stringify({ error: 'No Deepgram project found' }), { status: 500, headers: corsHeaders })
-  }
-
-  // ── 3. Create a short-lived Deepgram key (60 seconds TTL) ─────────────────
   const keyRes = await fetch(`https://api.deepgram.com/v1/projects/${projectId}/keys`, {
     method:  'POST',
     headers: { Authorization: `Token ${dgKey}`, 'Content-Type': 'application/json' },
@@ -57,6 +42,8 @@ Deno.serve(async (req) => {
   })
 
   if (!keyRes.ok) {
+    const body = await keyRes.text()
+    console.error('Deepgram key creation failed:', keyRes.status, body)
     return new Response(JSON.stringify({ error: 'Failed to create Deepgram token' }), { status: 502, headers: corsHeaders })
   }
 

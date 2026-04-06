@@ -82,8 +82,8 @@ async function startRecording () {
   // Get a short-lived Deepgram key from our Supabase edge function
   const tempKey = await fetchDeepgramToken()
 
-  const { createClient } = require('@deepgram/sdk')
-  const deepgram = createClient(tempKey)
+  const { DeepgramClient } = require('@deepgram/sdk')
+  const deepgram = new DeepgramClient(tempKey)
 
   dgConnection = deepgram.listen.live({
     model:            'nova-2',
