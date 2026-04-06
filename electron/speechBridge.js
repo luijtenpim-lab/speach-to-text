@@ -42,9 +42,9 @@ function initSpeechBridge ({ onPartial, onFinal, onError, onReady }) {
   console.log('[SpeechBridge] Launching helper:', helperPath)
   helperProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
-  // stdout = raw PCM audio → forward to Deepgram
+  // stdout = raw PCM audio → forward to Deepgram via sendMedia
   helperProcess.stdout.on('data', (chunk) => {
-    try { if (dgConnection) dgConnection.send(chunk) } catch {}
+    try { if (dgConnection) dgConnection.sendMedia(chunk) } catch {}
   })
 
   // stderr = JSON control messages
@@ -79,19 +79,19 @@ function handleControl (msg) {
 async function startRecording () {
   if (!helperProcess) throw new Error('SpeechBridge not initialised')
 
-  // Get a short-lived Deepgram key from our Supabase edge function
   const tempKey = await fetchDeepgramToken()
 
   const { DeepgramClient } = require('@deepgram/sdk')
   const deepgram = new DeepgramClient(tempKey)
 
-  dgConnection = deepgram.listen.live({
+  // connect() is async and returns a V1Socket
+  dgConnection = await deepgram.listen.v1.connect({
     model:            'nova-2',
     language:         'en-US',
     smart_format:     true,
     punctuate:        true,
     interim_results:  true,
-    utterance_end_ms: '800',
+    utterance_end_ms: 800,
     vad_events:       true,
     encoding:         'linear16',
     sample_rate:      16000,
@@ -104,26 +104,27 @@ async function startRecording () {
     helperProcess?.stdin.write('START\n')
   })
 
-  dgConnection.on('Results', async (data) => {
-    const transcript = data.channel?.alternatives?.[0]?.transcript ?? ''
+  // V1Socket emits 'message' with the parsed JSON object
+  dgConnection.on('message', (data) => {
+    const transcript = data?.channel?.alternatives?.[0]?.transcript ?? ''
     if (!transcript) return
 
     if (data.speech_final) {
-      console.log('[Deepgram] Utterance:', transcript)
-      if (_onPartial) _onPartial('') // clear overlay
+      console.log('[Deepgram] Utterance end:', transcript)
+      if (_onPartial) _onPartial('')
       if (_onFinal)   _onFinal(transcript)
-    } else if (!data.is_final) {
+    } else if (data.is_final === false) {
       if (_onPartial) _onPartial(transcript)
     }
   })
 
   dgConnection.on('error', (err) => {
-    console.error('[Deepgram]', err)
-    if (_onError) _onError('Deepgram error')
+    console.error('[Deepgram error]', err?.message ?? err)
+    if (_onError) _onError('Deepgram error: ' + (err?.message ?? ''))
   })
 
   dgConnection.on('close', () => {
-    console.log('[Deepgram] Closed')
+    console.log('[Deepgram] Connection closed')
     dgConnection = null
   })
 }
@@ -135,10 +136,14 @@ function stopRecording () {
   const duration = startTime ? Date.now() - startTime : 0
   startTime = null
 
+  // Tell Deepgram no more audio is coming, then close after it processes
   setTimeout(() => {
-    try { dgConnection?.requestClose() } catch {}
-    dgConnection = null
-  }, 1500)
+    try { dgConnection?.sendCloseStream() } catch {}
+    setTimeout(() => {
+      try { dgConnection?.close() } catch {}
+      dgConnection = null
+    }, 1000)
+  }, 500)
 
   return duration
 }
@@ -146,7 +151,8 @@ function stopRecording () {
 // ── Destroy ───────────────────────────────────────────────────────────────────
 
 function destroySpeechBridge () {
-  try { dgConnection?.requestClose() } catch {}
+  try { dgConnection?.sendCloseStream() } catch {}
+  try { dgConnection?.close() } catch {}
   dgConnection = null
   if (helperProcess) {
     helperProcess.stdin.write('EXIT\n')
