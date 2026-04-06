@@ -2,15 +2,15 @@ import React, { useEffect, useState } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 export default function Dashboard () {
-  const [stats, setStats]       = useState(null)
+  const [stats, setStats]         = useState(null)
   const [recording, setRecording] = useState(false)
-  const [liveText, setLiveText] = useState('')
+  const [processing, setProcessing] = useState(false)
 
   useEffect(() => {
     window.voiceflow.getDashboardStats().then(setStats)
-    window.voiceflow.onRecordingStart(() => setRecording(true))
-    window.voiceflow.onRecordingStop(() => { setRecording(false); setLiveText('') })
-    window.voiceflow.onTranscript((text) => setLiveText(text))
+    window.voiceflow.onRecordingStart(() => { setRecording(true); setProcessing(false) })
+    window.voiceflow.onRecordingProcessing(() => { setRecording(false); setProcessing(true) })
+    window.voiceflow.onRecordingStop(() => { setRecording(false); setProcessing(false) })
   }, [])
 
   function handleMouseDown () { window.voiceflow.startRecording() }
@@ -22,10 +22,9 @@ export default function Dashboard () {
 
   return (
     <div style={styles.page}>
-      {/* Recording overlay — covers the dashboard while active */}
-      {recording && (
-        <RecordingOverlay liveText={liveText} onStop={handleMouseUp} />
-      )}
+      {/* Overlays */}
+      {recording   && <RecordingOverlay onStop={handleMouseUp} />}
+      {processing  && <ProcessingOverlay />}
 
       {/* Header */}
       <div style={styles.header}>
@@ -140,12 +139,44 @@ export default function Dashboard () {
   )
 }
 
+// ─── Processing overlay ───────────────────────────────────────────────────────
+
+function ProcessingOverlay () {
+  return (
+    <div style={ov.backdrop}>
+      <div style={ov.bloom1} />
+      <div style={ov.card}>
+        <div style={ov.micCircle}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.7" strokeLinecap="round">
+            <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8"  y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <div style={ov.processingLabel}>Processing…</div>
+        <div style={ov.processingDots}>
+          <span style={{ ...ov.dot2, animationDelay: '0s' }} />
+          <span style={{ ...ov.dot2, animationDelay: '0.2s' }} />
+          <span style={{ ...ov.dot2, animationDelay: '0.4s' }} />
+        </div>
+      </div>
+      <style>{`
+        @keyframes dotBounce {
+          0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+          40%            { transform: scale(1);   opacity: 1; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 // ─── Recording overlay ────────────────────────────────────────────────────────
 
 const BARS = [0.4, 0.7, 1.0, 0.6, 0.85, 0.5, 0.9, 0.65, 0.75, 0.45, 0.8, 0.55]
 const DELAYS = [0, 0.18, 0.09, 0.27, 0.05, 0.22, 0.14, 0.31, 0.02, 0.19, 0.11, 0.25]
 
-function RecordingOverlay ({ liveText, onStop }) {
+function RecordingOverlay ({ onStop }) {
   return (
     <div style={ov.backdrop}>
       {/* Radial bloom */}
@@ -187,12 +218,7 @@ function RecordingOverlay ({ liveText, onStop }) {
           <span style={ov.liveLabel}>RECORDING</span>
         </div>
 
-        {/* Live transcript */}
-        <div style={ov.transcriptBox}>
-          <p style={ov.transcriptText}>{liveText || 'Listening…'}</p>
-        </div>
-
-        {/* Stop button */}
+        {/* Stop hint */}
         <button style={ov.stopBtn} onMouseUp={onStop}>
           Release to stop
         </button>
@@ -338,6 +364,16 @@ const ov = {
     color: '#E9D5FF',
     lineHeight: 1.6,
     fontStyle: 'italic',
+  },
+
+  // Processing
+  processingLabel: { fontSize: 16, fontWeight: 600, color: '#E9D5FF', letterSpacing: '-0.01em' },
+  processingDots: { display: 'flex', gap: 8, alignItems: 'center' },
+  dot2: {
+    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+    background: 'linear-gradient(135deg, #9333EA, #D946EF)',
+    boxShadow: '0 0 6px rgba(217,70,239,0.7)',
+    animation: 'dotBounce 1.2s ease-in-out infinite',
   },
 
   // Stop button

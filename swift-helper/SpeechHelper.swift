@@ -1,130 +1,124 @@
 import Foundation
-import Speech
 import AVFoundation
 
-// Protocol over stdin/stdout:
-// STDIN  → "START\n" | "STOP\n" | "EXIT\n"
-// STDOUT → JSON lines: {"type":"ready"} | {"type":"partial","text":"..."} | {"type":"final","text":"..."} | {"type":"error","message":"..."}
+// Protocol:
+// STDIN  ← "START\n" | "STOP\n" | "EXIT\n"
+// STDOUT → raw PCM audio (16-bit signed, 16 kHz, mono) — binary, streamed continuously
+// STDERR → JSON control lines: {"type":"authorized"} | {"type":"ready"} | {"type":"stopped"} | {"type":"error","message":"..."}
 
 class SpeechHelper: NSObject {
-    private var recognizer: SFSpeechRecognizer?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private let audioEngine = AVAudioEngine()
-    private var isRecording = false
+    private let audioEngine   = AVAudioEngine()
+    private var converter: AVAudioConverter?
+    private var isRunning     = false
+
+    // Deepgram expects 16-bit signed PCM, 16 kHz, mono
+    private let targetFormat  = AVAudioFormat(
+        commonFormat: .pcmFormatInt16,
+        sampleRate:   16_000,
+        channels:     1,
+        interleaved:  true
+    )!
 
     func run() {
-        requestAuthorization {
-            self.send(["type": "authorized"])
+        requestPermission {
+            self.control(["type": "authorized"])
             self.listenForCommands()
         }
     }
 
-    private func requestAuthorization(completion: @escaping () -> Void) {
-        SFSpeechRecognizer.requestAuthorization { status in
-            switch status {
-            case .authorized:
+    // ── Permissions ───────────────────────────────────────────────────────────
+
+    private func requestPermission(completion: @escaping () -> Void) {
+        AVCaptureDevice.requestAccess(for: .audio) { granted in
+            if granted {
                 completion()
-            case .denied:
-                self.send(["type": "error", "message": "Speech recognition permission denied"])
-                exit(1)
-            case .restricted:
-                self.send(["type": "error", "message": "Speech recognition restricted on this device"])
-                exit(1)
-            case .notDetermined:
-                self.send(["type": "error", "message": "Speech recognition permission not determined"])
-                exit(1)
-            @unknown default:
-                self.send(["type": "error", "message": "Unknown authorization status"])
+            } else {
+                self.control(["type": "error", "message": "Microphone permission denied"])
                 exit(1)
             }
         }
     }
 
+    // ── Command loop ──────────────────────────────────────────────────────────
+
     private func listenForCommands() {
-        // Run on background thread so we don't block the run loop
         DispatchQueue.global(qos: .userInitiated).async {
             while let line = readLine() {
-                let command = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                switch command {
-                case "START":
-                    DispatchQueue.main.async { self.startRecognition() }
-                case "STOP":
-                    DispatchQueue.main.async { self.stopRecognition() }
-                case "EXIT":
-                    exit(0)
-                default:
-                    break
+                switch line.trimmingCharacters(in: .whitespacesAndNewlines) {
+                case "START": DispatchQueue.main.async { self.startCapture() }
+                case "STOP":  DispatchQueue.main.async { self.stopCapture() }
+                case "EXIT":  exit(0)
+                default:      break
                 }
             }
         }
     }
 
-    func startRecognition() {
-        guard !isRecording else { return }
+    // ── Audio capture ─────────────────────────────────────────────────────────
 
-        recognizer = SFSpeechRecognizer(locale: Locale.current)
-        guard let recognizer = recognizer, recognizer.isAvailable else {
-            send(["type": "error", "message": "Speech recognizer not available"])
+    private func startCapture() {
+        guard !isRunning else { return }
+
+        let inputNode   = audioEngine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+
+        guard let conv = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            control(["type": "error", "message": "Cannot create audio converter"])
             return
         }
+        converter = conv
 
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest = recognitionRequest else { return }
-        recognitionRequest.shouldReportPartialResults = true
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] inBuf, _ in
+            guard let self = self, let conv = self.converter else { return }
 
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
+            // Calculate output frame count after resampling
+            let ratio      = self.targetFormat.sampleRate / inputFormat.sampleRate
+            let outFrames  = AVAudioFrameCount(Double(inBuf.frameLength) * ratio)
+            guard let outBuf = AVAudioPCMBuffer(pcmFormat: self.targetFormat, frameCapacity: outFrames) else { return }
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.recognitionRequest?.append(buffer)
-        }
-
-        recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            guard let self = self else { return }
-            if let result = result {
-                let type = result.isFinal ? "final" : "partial"
-                self.send(["type": type, "text": result.bestTranscription.formattedString])
+            var inputConsumed = false
+            conv.convert(to: outBuf, error: nil) { _, status in
+                if inputConsumed { status.pointee = .noDataNow; return nil }
+                status.pointee  = .haveData
+                inputConsumed   = true
+                return inBuf
             }
-            if let error = error {
-                self.send(["type": "error", "message": error.localizedDescription])
-                self.stopRecognition()
-            }
+
+            guard outBuf.frameLength > 0, let int16Ptr = outBuf.int16ChannelData else { return }
+            let byteCount = Int(outBuf.frameLength) * 2   // 16-bit = 2 bytes per sample
+            let data      = Data(bytes: int16Ptr[0], count: byteCount)
+            FileHandle.standardOutput.write(data)
         }
 
         do {
             audioEngine.prepare()
             try audioEngine.start()
-            isRecording = true
-            send(["type": "ready"])
+            isRunning = true
+            control(["type": "ready"])
         } catch {
-            send(["type": "error", "message": "Audio engine failed to start: \(error.localizedDescription)"])
+            control(["type": "error", "message": "Audio engine failed: \(error.localizedDescription)"])
         }
     }
 
-    func stopRecognition() {
-        guard isRecording else { return }
+    private func stopCapture() {
+        guard isRunning else { return }
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionRequest?.endAudio()
-        recognitionTask?.cancel()
-        recognitionRequest = nil
-        recognitionTask = nil
-        recognizer = nil
-        isRecording = false
-        send(["type": "stopped"])
+        converter  = nil
+        isRunning  = false
+        control(["type": "stopped"])
     }
 
-    private func send(_ dict: [String: String]) {
+    // ── Control messages → stderr (stdout is reserved for audio) ─────────────
+
+    private func control(_ dict: [String: String]) {
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
-              let str = String(data: data, encoding: .utf8) else { return }
-        print(str)
-        // fflush is critical — without it, Node.js won't receive lines until buffer fills
-        fflush(stdout)
+              let str  = String(data: data, encoding: .utf8) else { return }
+        FileHandle.standardError.write((str + "\n").data(using: .utf8)!)
+        fflush(stderr)
     }
 }
 
-// Run loop required for SFSpeechRecognizer async callbacks
 let helper = SpeechHelper()
 helper.run()
 RunLoop.main.run()

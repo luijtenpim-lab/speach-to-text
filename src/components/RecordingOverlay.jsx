@@ -6,20 +6,21 @@ const SPEEDS  = [1.1, 0.9, 1.3, 0.8, 1.0, 1.2, 0.85, 1.15, 0.95, 1.05, 1.25, 0.8
 const OFFSETS = [0, 0.8, 0.3, 1.1, 0.5, 1.4, 0.2, 0.9, 0.6, 1.3, 0.1, 0.7, 1.0, 0.4, 1.2, 0.6]
 
 export default function RecordingOverlay () {
-  const [visible, setVisible]   = useState(false)
-  const [heights, setHeights]   = useState(BARS.map ? Array(BARS).fill(3) : Array(16).fill(3))
+  const [state, setState]       = useState('idle') // 'idle' | 'recording' | 'processing'
+  const [heights, setHeights]   = useState(Array(16).fill(3))
   const rafRef                  = useRef(null)
   const startRef                = useRef(null)
 
   useEffect(() => {
     if (!window.voiceflow) return
-    window.voiceflow.onRecordingStart(() => setVisible(true))
-    window.voiceflow.onRecordingStop(()  => setVisible(false))
+    window.voiceflow.onRecordingStart(()      => setState('recording'))
+    window.voiceflow.onRecordingProcessing(() => setState('processing'))
+    window.voiceflow.onRecordingStop(()       => setState('idle'))
   }, [])
 
-  // Drive animation with rAF when visible
+  // Waveform animation — only while recording
   useEffect(() => {
-    if (!visible) {
+    if (state !== 'recording') {
       cancelAnimationFrame(rafRef.current)
       setHeights(Array(16).fill(3))
       return
@@ -40,9 +41,27 @@ export default function RecordingOverlay () {
 
     rafRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [visible])
+  }, [state])
 
-  if (!visible) return null
+  if (state === 'idle') return null
+
+  if (state === 'processing') {
+    return (
+      <>
+        <style>{`
+          @keyframes dotBounce {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+            40%            { transform: scale(1);   opacity: 1; }
+          }
+        `}</style>
+        <div style={s.root}>
+          <span style={{ ...s.dot, animationDelay: '0s' }} />
+          <span style={{ ...s.dot, animationDelay: '0.2s' }} />
+          <span style={{ ...s.dot, animationDelay: '0.4s' }} />
+        </div>
+      </>
+    )
+  }
 
   return (
     <div style={s.root}>
@@ -69,5 +88,14 @@ const s = {
     background:  'linear-gradient(180deg, #D946EF, #9333EA)',
     boxShadow:   '0 0 8px rgba(217,70,239,0.8)',
     transition:  'height 0.06s ease',
+  },
+  dot: {
+    display:     'inline-block',
+    width:       10,
+    height:      10,
+    borderRadius: '50%',
+    background:  'linear-gradient(135deg, #9333EA, #D946EF)',
+    boxShadow:   '0 0 8px rgba(217,70,239,0.8)',
+    animation:   'dotBounce 1.2s ease-in-out infinite',
   },
 }

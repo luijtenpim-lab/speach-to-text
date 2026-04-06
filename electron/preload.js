@@ -17,9 +17,10 @@ contextBridge.exposeInMainWorld('voiceflow', {
   stopRecording: () => ipcRenderer.invoke('recording:stop'),
 
   // --- Recording events (main → renderer) ---
-  onRecordingStart: (cb) => ipcRenderer.on('recording:start', cb),
-  onRecordingStop: (cb) => ipcRenderer.on('recording:stop', cb),
-  onTranscript: (cb) => ipcRenderer.on('transcript:partial', (_, text) => cb(text)),
+  onRecordingStart:      (cb) => ipcRenderer.on('recording:start',      cb),
+  onRecordingStop:       (cb) => ipcRenderer.on('recording:stop',       cb),
+  onRecordingProcessing: (cb) => ipcRenderer.on('recording:processing', cb),
+  onTranscript:          (cb) => ipcRenderer.on('transcript:partial', (_, text) => cb(text)),
 
   // --- Permissions ---
   checkPermissions: () => ipcRenderer.invoke('permissions:check'),

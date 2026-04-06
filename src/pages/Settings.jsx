@@ -147,6 +147,9 @@ function DefaultsSection () {
         <ActionBtn onClick={() => setShowMic(true)}>Select microphone</ActionBtn>
       </SettingRow>
 
+      <ApiKeyRow settingKey="deepgram_api_key"  label="Deepgram API Key"  desc="Required for real-time streaming transcription" />
+      <ApiKeyRow settingKey="openai_api_key"   label="OpenAI API Key"    desc="Required for grammar cleanup (GPT-4o mini)" />
+
       <SettingRow
         icon={<GlobeIcon />}
         title="Language"
@@ -156,6 +159,52 @@ function DefaultsSection () {
         <ActionBtn onClick={() => setShowLang(true)}>Select language</ActionBtn>
       </SettingRow>
     </>
+  )
+}
+
+function ApiKeyRow ({ settingKey, label, desc }) {
+  const [key, setKey]     = useState('')
+  const [saved, setSaved] = useState(false)
+  const [show, setShow]   = useState(false)
+
+  useEffect(() => {
+    window.voiceflow.getSetting(settingKey).then(v => { if (v) setKey(v) })
+  }, [settingKey])
+
+  async function save () {
+    await window.voiceflow.setSetting(settingKey, key.trim())
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  return (
+    <div style={styles.settingRow}>
+      <div style={styles.settingLeft}>
+        <span style={styles.settingIconWrap}><KeyIcon /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={styles.settingTitle}>{label}</div>
+          <div style={styles.settingDesc}>{desc}</div>
+        </div>
+      </div>
+      <div style={styles.settingRight}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            type={show ? 'text' : 'password'}
+            value={key}
+            onChange={e => setKey(e.target.value)}
+            placeholder="sk-..."
+            style={styles.apiInput}
+          />
+          <button style={styles.iconBtn} onClick={() => setShow(s => !s)} title={show ? 'Hide' : 'Show'}>
+            {show ? '🙈' : '👁'}
+          </button>
+          {saved
+            ? <span style={styles.savedBadge}>Saved ✓</span>
+            : <ActionBtn onClick={save}>Save</ActionBtn>
+          }
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -464,6 +513,9 @@ function SoundIcon () {
 function ClipboardIcon () {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
 }
+function KeyIcon () {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6M15.5 7.5l3 3"/></svg>
+}
 function MuteIcon () {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
 }
@@ -542,4 +594,6 @@ const styles = {
   savedBadge:     { color: '#34D399', fontSize: 12, fontWeight: 700 },
   actionBtn:      { background: 'linear-gradient(135deg, #9333EA, #D946EF)', border: 'none', borderRadius: 9, padding: '9px 0', width: 148, textAlign: 'center', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 0 1px rgba(217,70,239,0.5)', transition: 'all 0.15s', whiteSpace: 'nowrap', flexShrink: 0 },
   actionBtnDisabled: { background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.border}`, color: C.text3, cursor: 'not-allowed', boxShadow: 'none' },
+  apiInput:       { background: '#0D0D0D', border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 9, padding: '9px 12px', color: C.text1, fontSize: 13, width: 180, fontFamily: 'inherit', outline: 'none' },
+  iconBtn:        { background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: '4px 2px', lineHeight: 1 },
 }

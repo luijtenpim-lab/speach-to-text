@@ -4,14 +4,14 @@ const path = require('path')
 const db = require('./db')
 const { injectText } = require('./injector')
 const { startHotkeyListener, stopHotkeyListener, setHotkey, FN_KEYCODE } = require('./hotkey')
-const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge } = require('./speechBridge')
+const { initSpeechBridge, startRecording, stopRecording, destroySpeechBridge, cleanTranscript } = require('./speechBridge')
 
 // --- State ---
-let mainWindow = null
-let overlayWindow = null
-let tray = null
-let isRecording = false
-let lastTranscript = ''
+let mainWindow      = null
+let overlayWindow   = null
+let tray            = null
+let isRecording     = false
+let recordDuration  = 0
 let capturingKeycode = false
 
 // --- App setup ---
@@ -32,10 +32,9 @@ app.on('before-quit', () => {
   stopHotkeyListener()
 })
 
-// Allow Cmd+Q to fully quit
 app.on('window-all-closed', () => app.quit())
 
-// --- App menu (enables Cmd+Q, Cmd+W, etc.) ---
+// --- App menu ---
 function createAppMenu () {
   const menu = Menu.buildFromTemplate([
     {
@@ -43,7 +42,7 @@ function createAppMenu () {
       submenu: [
         { label: 'About Voxa', role: 'about' },
         { type: 'separator' },
-        { label: 'Hide Voxa', accelerator: 'Cmd+H', role: 'hide' },
+        { label: 'Hide Voxa',  accelerator: 'Cmd+H', role: 'hide' },
         { type: 'separator' },
         { label: 'Quit Voxa', accelerator: 'Cmd+Q', click: () => app.exit(0) },
       ],
@@ -51,19 +50,14 @@ function createAppMenu () {
     {
       label: 'Edit',
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' },
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut'  }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
       ],
     },
     {
       label: 'Window',
       submenu: [
-        { label: 'Open Voxa', accelerator: 'Cmd+1', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+        { label: 'Open Voxa',    accelerator: 'Cmd+1', click: () => { mainWindow?.show(); mainWindow?.focus() } },
         { label: 'Close Window', accelerator: 'Cmd+W', click: () => mainWindow?.hide() },
         { role: 'minimize' },
       ],
@@ -75,18 +69,15 @@ function createAppMenu () {
 // --- Windows ---
 function createMainWindow () {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 650,
-    minWidth: 800,
-    minHeight: 550,
+    width: 900, height: 650, minWidth: 800, minHeight: 550,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#080808',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   })
 
   const url = process.env.NODE_ENV === 'development'
@@ -96,29 +87,24 @@ function createMainWindow () {
   mainWindow.loadURL(url)
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.on('close', (e) => {
-    if (app.quitting) return // allow Cmd+Q to fully close
+    if (app.quitting) return
     e.preventDefault()
-    mainWindow.hide() // red X = hide to tray, Cmd+Q = full quit
+    mainWindow.hide()
   })
 }
 
 function createOverlayWindow () {
   overlayWindow = new BrowserWindow({
-    width: 420,
-    height: 64,
-    x: Math.round(require('electron').screen.getPrimaryDisplay().workAreaSize.width / 2 - 200),
+    width: 420, height: 64,
+    x: Math.round(require('electron').screen.getPrimaryDisplay().workAreaSize.width / 2 - 210),
     y: require('electron').screen.getPrimaryDisplay().workAreaSize.height - 120,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    show: false,
+    frame: false, transparent: true, alwaysOnTop: true,
+    skipTaskbar: true, hasShadow: false, show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   })
 
   const url = process.env.NODE_ENV === 'development'
@@ -132,170 +118,161 @@ function createOverlayWindow () {
 function createTray () {
   const icon = nativeImage.createEmpty()
   tray = new Tray(icon)
-  tray.setTitle('🎙') // visible menu bar text fallback
+  tray.setTitle('🎙')
   tray.setToolTip('Voxa')
 
   const menu = Menu.buildFromTemplate([
-    { label: 'Open Voxa', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+    { label: 'Open Voxa',      click: () => { mainWindow?.show(); mainWindow?.focus() } },
     { type: 'separator' },
     { label: 'Start Recording', click: () => handleRecordingStart() },
     { label: 'Stop Recording',  click: () => handleRecordingStop() },
     { type: 'separator' },
-    { label: 'Quit Voxa', click: () => app.exit(0) }
+    { label: 'Quit Voxa',      click: () => app.exit(0) },
   ])
   tray.setContextMenu(menu)
   tray.on('click', () => { mainWindow?.show(); mainWindow?.focus() })
 }
 
-// --- Speech bridge ---
+// --- Speech bridge (Deepgram + GPT-4o mini) ---
 function initBridge () {
   initSpeechBridge({
+    onReady: () => {},
+
+    // Interim partial — show in overlay only (not injected)
     onPartial: (text) => {
-      lastTranscript = text
       overlayWindow?.webContents.send('transcript:partial', text)
       mainWindow?.webContents.send('transcript:partial', text)
     },
-    onFinal: (text) => {
-      lastTranscript = text
+
+    // Utterance complete — clean with GPT then inject
+    onFinal: async (rawText) => {
+      if (!rawText.trim()) return
+
+      const openaiKey = db.getSetting('openai_api_key')
+      let text = rawText
+
+      if (openaiKey) {
+        try {
+          text = await cleanTranscript(rawText, openaiKey)
+        } catch (e) {
+          console.error('[GPT cleanup]', e.message)
+        }
+      }
+
+      const wordCount = text.split(/\s+/).filter(Boolean).length
+      injectText(text).catch(console.error)
+      db.insertSession({ text, word_count: wordCount, duration_ms: 0, app_name: null })
     },
-    onReady: () => {
-      // Recording has started in the helper
+
+    onError: (msg) => {
+      console.error('[SpeechBridge]', msg)
+      handleRecordingStop()
     },
-    onError: (message) => {
-      console.error('[SpeechBridge error]', message)
-      if (isRecording) handleRecordingStop()
-    }
   })
 }
 
 // --- Hotkey ---
 function startHotkeyFromSettings () {
-  const storedKeycode = db.getSetting('hotkey_rawcode')
-  const keycode = storedKeycode ? parseInt(storedKeycode, 10) : FN_KEYCODE
-
-  console.log('[VoiceFlow] Starting hotkey listener for keycode:', keycode)
+  const stored  = db.getSetting('hotkey_rawcode')
+  const keycode = stored ? parseInt(stored, 10) : FN_KEYCODE
   startHotkeyListener(keycode, handleRecordingStart, handleRecordingStop)
 }
 
 function handleRecordingStart () {
   if (isRecording || capturingKeycode) return
-  console.log('[VoiceFlow] Recording START')
+  console.log('[Voxa] Recording START')
   isRecording = true
-  lastTranscript = ''
+
   overlayWindow?.showInactive()
   overlayWindow?.webContents.send('recording:start')
   mainWindow?.webContents.send('recording:start')
-  startRecording()
+
+  const dgKey = db.getSetting('deepgram_api_key')
+    || process.env.DEEPGRAM_API_KEY
+    || ''
+
+  startRecording(dgKey).catch((err) => {
+    console.error('[Voxa] Failed to start recording:', err.message)
+    handleRecordingStop()
+  })
 }
 
 function handleRecordingStop () {
   if (!isRecording) return
-  console.log('[VoiceFlow] Recording STOP, transcript:', lastTranscript)
-  isRecording = false
-  const duration = stopRecording() || 0
+  console.log('[Voxa] Recording STOP')
+  isRecording   = false
+  recordDuration = stopRecording() || 0
 
-  overlayWindow?.hide()
-  overlayWindow?.webContents.send('recording:stop')
-  mainWindow?.webContents.send('recording:stop')
+  // Keep overlay visible in processing state briefly
+  overlayWindow?.webContents.send('recording:processing')
+  mainWindow?.webContents.send('recording:processing')
 
-  if (lastTranscript.trim().length > 0) {
-    const text = lastTranscript.trim()
-    const wordCount = text.split(/\s+/).filter(Boolean).length
-
-    // Inject text into active app
-    injectText(text).catch(console.error)
-
-    // Persist session
-    db.insertSession({ text, word_count: wordCount, duration_ms: duration, app_name: null })
-  }
-
-  lastTranscript = ''
+  // Hide overlay after Deepgram finishes (1.5s buffer in stopRecording)
+  setTimeout(() => {
+    overlayWindow?.hide()
+    overlayWindow?.webContents.send('recording:stop')
+    mainWindow?.webContents.send('recording:stop')
+  }, 2000)
 }
 
 // --- IPC Handlers ---
 function setupIpcHandlers () {
-  ipcMain.handle('db:getSessions', (_, opts) => db.getSessions(opts))
-  ipcMain.handle('db:deleteSession', (_, id) => db.deleteSession(id))
-  ipcMain.handle('db:getDashboardStats', () => db.getDashboardStats())
-  ipcMain.handle('db:getSetting', (_, key) => db.getSetting(key))
-  ipcMain.handle('db:setSetting', (_, key, value) => {
+  ipcMain.handle('db:getSessions',      (_, opts) => db.getSessions(opts))
+  ipcMain.handle('db:deleteSession',    (_, id)   => db.deleteSession(id))
+  ipcMain.handle('db:getDashboardStats', ()       => db.getDashboardStats())
+  ipcMain.handle('db:getSetting',       (_, key)  => db.getSetting(key))
+  ipcMain.handle('db:setSetting',       (_, key, value) => {
     db.setSetting(key, value)
-    // If hotkey changed, update the listener
-    if (key === 'hotkey_rawcode') {
-      setHotkey(parseInt(value, 10))
-    }
+    if (key === 'hotkey_rawcode') setHotkey(parseInt(value, 10))
   })
 
-  ipcMain.handle('permissions:check', async () => {
-    const mic = systemPreferences.getMediaAccessStatus('microphone')
-    const accessibility = await checkAccessibility()
-    return { microphone: mic, accessibility }
-  })
+  ipcMain.handle('permissions:check', async () => ({
+    microphone:   systemPreferences.getMediaAccessStatus('microphone'),
+    accessibility: await checkAccessibility(),
+  }))
 
   ipcMain.handle('hotkey:startCapture', () => {
     capturingKeycode = true
-    // Temporarily override keydown listener to capture any key
     const { uIOhook } = require('uiohook-napi')
-    const captureHandler = (event) => {
+    const handler = (event) => {
       mainWindow?.webContents.send('keycode:detected', event.rawcode || event.keycode)
-      uIOhook.removeListener('keydown', captureHandler)
+      uIOhook.removeListener('keydown', handler)
       capturingKeycode = false
     }
-    uIOhook.on('keydown', captureHandler)
+    uIOhook.on('keydown', handler)
   })
+  ipcMain.handle('hotkey:stopCapture', () => { capturingKeycode = false })
+  ipcMain.handle('mic:list', async () => [])
 
-  ipcMain.handle('hotkey:stopCapture', () => {
-    capturingKeycode = false
-  })
-
-  ipcMain.handle('mic:list', async () => {
-    return []
-  })
-
-  // UI-triggered recording (click button instead of hotkey)
   ipcMain.handle('recording:start', () => handleRecordingStart())
-  ipcMain.handle('recording:stop', () => handleRecordingStop())
+  ipcMain.handle('recording:stop',  () => handleRecordingStop())
 
-  // App info for Status screen
   ipcMain.handle('app:info', () => ({
-    version: app.getVersion(),
-    platform: process.platform === 'darwin' ? 'macOS' : process.platform,
+    version:         app.getVersion(),
+    platform:        process.platform === 'darwin' ? 'macOS' : process.platform,
     electronVersion: process.versions.electron,
-    nodeVersion: process.versions.node,
-    userAgent: `Electron/${process.versions.electron} (${process.platform})`
+    nodeVersion:     process.versions.node,
+    userAgent:       `Electron/${process.versions.electron} (${process.platform})`,
   }))
 
-  // Login item (launch at login)
-  ipcMain.handle('app:getLoginItem', () => {
-    return app.getLoginItemSettings().openAtLogin
-  })
-  ipcMain.handle('app:setLoginItem', (_, enabled) => {
-    app.setLoginItemSettings({ openAtLogin: enabled })
-  })
+  ipcMain.handle('app:getLoginItem', () => app.getLoginItemSettings().openAtLogin)
+  ipcMain.handle('app:setLoginItem', (_, enabled) => app.setLoginItemSettings({ openAtLogin: enabled }))
 
-  // System toggles — persisted in SQLite settings
   ipcMain.handle('system:getAll', () => ({
-    launchAtLogin:   app.getLoginItemSettings().openAtLogin,
-    interactionSounds:   db.getSetting('interaction_sounds') !== 'false',
-    copyToClipboard:     db.getSetting('copy_to_clipboard') === 'true',
-    muteBackground:      db.getSetting('mute_background') !== 'false'
+    launchAtLogin:     app.getLoginItemSettings().openAtLogin,
+    interactionSounds: db.getSetting('interaction_sounds') !== 'false',
+    copyToClipboard:   db.getSetting('copy_to_clipboard') === 'true',
+    muteBackground:    db.getSetting('mute_background')   !== 'false',
   }))
   ipcMain.handle('system:set', (_, key, value) => {
-    if (key === 'launchAtLogin') {
-      app.setLoginItemSettings({ openAtLogin: value })
-    } else {
-      db.setSetting(key, String(value))
-    }
+    if (key === 'launchAtLogin') app.setLoginItemSettings({ openAtLogin: value })
+    else db.setSetting(key, String(value))
   })
 }
 
 async function requestPermissions () {
-  // Trigger macOS microphone permission dialog — this registers the app
-  // in System Settings > Privacy & Security > Microphone
-  const micStatus = systemPreferences.getMediaAccessStatus('microphone')
-  if (micStatus !== 'granted') {
-    await systemPreferences.askForMediaAccess('microphone')
-  }
+  const status = systemPreferences.getMediaAccessStatus('microphone')
+  if (status !== 'granted') await systemPreferences.askForMediaAccess('microphone')
 }
 
 function checkAccessibility () {
