@@ -5,18 +5,39 @@ const { app }    = require('electron')
 
 const SUPABASE_URL = 'https://symzpwobkyhqseslmijg.supabase.co'
 
-let helperProcess = null
-let _onPartial    = null
-let _onFinal      = null
-let _onError      = null
-let startTime     = null
-let _accessToken  = null
-let _mainWindow   = null   // ref to send IPC events to renderer
+let helperProcess  = null
+let _onPartial     = null
+let _onFinal       = null
+let _onError       = null
+let startTime      = null
+let _accessToken   = null
+let _mainWindow    = null
+let _cachedKey     = null   // pre-fetched Deepgram key — refreshed every 50s
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 function setAccessToken (token) { _accessToken = token }
-function setMainWindow  (win)   { _mainWindow  = win   }
+function setMainWindow  (win)   {
+  _mainWindow = win
+  // Pre-fetch key as soon as we have the window
+  refreshKey()
+}
+
+// ── Key cache — refreshed before expiry ───────────────────────────────────────
+
+async function refreshKey () {
+  try {
+    const key = await fetchDeepgramToken()
+    _cachedKey = key
+    console.log('[SpeechBridge] Deepgram key cached')
+    // Refresh every 50s (edge function tokens expire in 60s)
+    setTimeout(refreshKey, 50_000)
+  } catch (e) {
+    console.error('[SpeechBridge] Key refresh failed:', e.message)
+    // Retry in 10s
+    setTimeout(refreshKey, 10_000)
+  }
+}
 
 // ── Helper path ───────────────────────────────────────────────────────────────
 
@@ -38,7 +59,7 @@ function initSpeechBridge ({ onPartial, onFinal, onError }) {
 
   helperProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
-  // stdout = raw PCM — forward to renderer which owns the WebSocket
+  // stdout = raw PCM — send to renderer as binary IPC
   helperProcess.stdout.on('data', (chunk) => {
     _mainWindow?.webContents.send('audio:chunk', chunk)
   })
@@ -64,19 +85,21 @@ function initSpeechBridge ({ onPartial, onFinal, onError }) {
   })
 }
 
-// ── Start ─────────────────────────────────────────────────────────────────────
+// ── Start — fully synchronous ─────────────────────────────────────────────────
 
-async function startRecording () {
+function startRecording () {
   if (!helperProcess) throw new Error('SpeechBridge not initialised')
+  if (!_cachedKey)    throw new Error('Deepgram key not ready yet — try again in a moment')
 
   startTime = Date.now()
 
-  // Fetch key and push to renderer — renderer opens the WebSocket
-  const key = await fetchDeepgramToken()
-  _mainWindow?.webContents.send('deepgram:key', key.trim())
+  // Send cached key to renderer → renderer opens WebSocket immediately
+  _mainWindow?.webContents.send('deepgram:key', _cachedKey)
 
-  // Start mic — audio chunks flow to renderer via 'audio:chunk'
+  // Start mic
   helperProcess.stdin.write('START\n')
+
+  console.log('[SpeechBridge] Recording started, key sent to renderer')
 }
 
 // ── Stop ──────────────────────────────────────────────────────────────────────
@@ -85,10 +108,7 @@ function stopRecording () {
   helperProcess?.stdin.write('STOP\n')
   const duration = startTime ? Date.now() - startTime : 0
   startTime = null
-
-  // Signal renderer to send CloseStream to Deepgram
   _mainWindow?.webContents.send('audio:stop')
-
   return duration
 }
 
@@ -112,21 +132,21 @@ async function fetchDeepgramToken () {
       })
       if (res.ok) {
         const { key } = await res.json()
-        if (key) { console.log('[SpeechBridge] Edge function token OK'); return key }
+        if (key) return key
       }
       console.warn('[SpeechBridge] Edge function', res.status, '— using env key')
-    } catch (e) {
+    } catch {
       console.warn('[SpeechBridge] Edge function failed — using env key')
     }
   }
 
   const envKey = process.env.DEEPGRAM_API_KEY
-  if (envKey) { console.log('[SpeechBridge] Using env DEEPGRAM_API_KEY'); return envKey }
+  if (envKey) return envKey
 
   throw new Error('No Deepgram key available')
 }
 
-// ── GPT cleanup via edge function ─────────────────────────────────────────────
+// ── GPT cleanup ───────────────────────────────────────────────────────────────
 
 async function cleanTranscript (text) {
   if (!_accessToken) return text

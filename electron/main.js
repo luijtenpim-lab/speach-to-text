@@ -191,15 +191,15 @@ function handleRecordingStart () {
   overlayWindow?.webContents.send('recording:start')
   mainWindow?.webContents.send('recording:start')
 
-  // startRecording is async (fetches token + opens WebSocket)
-  // We fire and forget — stopRecording handles the race via _pendingStop flag
-  startRecording().catch((err) => {
+  try {
+    startRecording()
+  } catch (err) {
     console.error('[Voxa] Failed to start recording:', err.message)
     isRecording = false
     overlayWindow?.hide()
     overlayWindow?.webContents.send('recording:stop')
     mainWindow?.webContents.send('recording:stop')
-  })
+  }
 }
 
 function handleRecordingStop () {
