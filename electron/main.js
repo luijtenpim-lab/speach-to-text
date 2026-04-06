@@ -88,18 +88,21 @@ function createOverlayWindow () {
 
 // --- Tray ---
 function createTray () {
-  // 16x16 template image — use a simple microphone icon
   const icon = nativeImage.createEmpty()
   tray = new Tray(icon)
-  tray.setToolTip('VoiceFlow')
+  tray.setTitle('🎙') // visible menu bar text fallback
+  tray.setToolTip('Voxa')
 
   const menu = Menu.buildFromTemplate([
-    { label: 'Open VoiceFlow', click: () => mainWindow?.show() },
+    { label: 'Open Voxa', click: () => { mainWindow?.show(); mainWindow?.focus() } },
     { type: 'separator' },
-    { label: 'Quit', click: () => app.exit(0) }
+    { label: 'Start Recording', click: () => handleRecordingStart() },
+    { label: 'Stop Recording',  click: () => handleRecordingStop() },
+    { type: 'separator' },
+    { label: 'Quit Voxa', click: () => app.exit(0) }
   ])
   tray.setContextMenu(menu)
-  tray.on('click', () => mainWindow?.show())
+  tray.on('click', () => { mainWindow?.show(); mainWindow?.focus() })
 }
 
 // --- Speech bridge ---

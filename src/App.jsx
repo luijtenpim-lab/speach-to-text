@@ -171,8 +171,11 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     padding: '22px 20px 18px',
+    paddingTop: 44, // space for traffic lights
     borderBottom: '1px solid rgba(255,255,255,0.06)',
     marginBottom: 10,
+    WebkitAppRegion: 'drag', // makes this area draggable
+    WebkitUserSelect: 'none',
   },
   navGroup: {
     flex: 1,
@@ -180,6 +183,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: 2,
+    WebkitAppRegion: 'no-drag',
   },
   navLink: {
     display: 'flex',

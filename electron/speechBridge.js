@@ -28,6 +28,15 @@ function initSpeechBridge ({ onPartial, onFinal, onError, onReady }) {
   _onReady = onReady
 
   const helperPath = getHelperPath()
+
+  // Ensure the binary is executable (permissions can be lost after extraction)
+  try {
+    require('fs').chmodSync(helperPath, 0o755)
+  } catch (e) {
+    console.error('[SpeechBridge] Could not chmod helper:', e.message)
+  }
+
+  console.log('[SpeechBridge] Launching helper at:', helperPath)
   helperProcess = spawn(helperPath, [], { stdio: ['pipe', 'pipe', 'pipe'] })
 
   let buffer = ''
