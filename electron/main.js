@@ -104,8 +104,8 @@ function createMainWindow () {
 
 function createOverlayWindow () {
   overlayWindow = new BrowserWindow({
-    width: 400,
-    height: 80,
+    width: 420,
+    height: 64,
     x: Math.round(require('electron').screen.getPrimaryDisplay().workAreaSize.width / 2 - 200),
     y: require('electron').screen.getPrimaryDisplay().workAreaSize.height - 120,
     frame: false,
