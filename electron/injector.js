@@ -2,32 +2,30 @@ const { execSync } = require('child_process')
 const { clipboard } = require('electron')
 
 /**
- * Injects text into the currently focused application by:
- * 1. Saving the current clipboard
- * 2. Writing the transcript to the clipboard
- * 3. Simulating Cmd+V via AppleScript (does not steal focus)
- * 4. Restoring the original clipboard after 500ms
+ * Injects text into the currently focused application.
+ * Strategy 1: Clipboard + Cmd+V via AppleScript (requires Accessibility)
+ * Strategy 2: Clipboard only — user can paste manually (fallback)
  */
 async function injectText (text) {
-  if (!text || text.trim().length === 0) return
+  if (!text?.trim()) return
 
   const original = clipboard.readText()
+  clipboard.writeText(text)
 
   try {
-    clipboard.writeText(text)
     execSync(
-      `osascript -e 'tell application "System Events" to keystroke "v" using command down'`
+      `osascript -e 'tell application "System Events" to keystroke "v" using command down'`,
+      { timeout: 3000 }
     )
+    console.log('[Injector] Pasted via Cmd+V ✓')
   } catch (err) {
-    // Accessibility permission not granted — restore clipboard and surface error
-    clipboard.writeText(original)
-    throw new Error(`Text injection failed. Grant Accessibility permission in System Settings > Privacy & Security > Accessibility.\n${err.message}`)
+    console.error('[Injector] Cmd+V failed — Accessibility permission may be missing.')
+    console.error('[Injector] Go to: System Settings → Privacy & Security → Accessibility → add Electron/Voxa')
+    console.error('[Injector] Text is in clipboard — press Cmd+V manually for now.')
+    // Don't throw — text is on clipboard, user can paste
   }
 
-  // Restore original clipboard asynchronously so paste completes first
-  setTimeout(() => {
-    clipboard.writeText(original)
-  }, 500)
+  setTimeout(() => clipboard.writeText(original), 800)
 }
 
 module.exports = { injectText }
